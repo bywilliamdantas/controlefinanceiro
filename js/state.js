@@ -101,18 +101,27 @@ window.App = window.App || {};
   // recorrentes só entram na conta no mês em que vencem — cada mês futuro já
   // foi pré-criado no banco, mas eles não devem se acumular todos de uma vez
   // (senão um streaming de R$30/mês por 12 meses pareceria R$360 de uso hoje).
-  // Assim que o mês é pago, o valor libera; no mês seguinte a parcela
-  // recorrente daquele mês passa a contar no lugar.
-  function usadoCartao(cartaoId) {
+  // Assim que o mês vira, o mês anterior sai da conta sozinho (nem precisa
+  // estar marcado como pago pra isso) e o mês atual passa a contar no lugar.
+  // Parcelamentos são diferentes: são uma dívida única dividida em partes, e
+  // como no cartão de crédito real, a compra consome o limite inteiro assim
+  // que é feita — por isso TODAS as parcelas em aberto (de qualquer mês,
+  // passado ou futuro) somam juntas, e só liberam limite conforme cada
+  // parcela é paga.
+  function usadoCartaoDetalhado(cartaoId) {
     var mesAtual = u.todayISO().slice(0, 7);
-    return App.state.lancamentos
-      .filter(function (l) {
-        if (l.cartaoId !== cartaoId || l.status !== "aberto") return false;
-        if (l.recorrente) return l.vencimento.slice(0, 7) === mesAtual;
-        return true;
-      })
-      .reduce(function (s, l) { return s + l.valor; }, 0);
+    var recorrente = 0, parcelado = 0;
+    App.state.lancamentos.forEach(function (l) {
+      if (l.cartaoId !== cartaoId || l.status !== "aberto") return;
+      if (l.recorrente) {
+        if (l.vencimento.slice(0, 7) === mesAtual) recorrente += l.valor;
+      } else {
+        parcelado += l.valor;
+      }
+    });
+    return { recorrente: recorrente, parcelado: parcelado, total: recorrente + parcelado };
   }
+  function usadoCartao(cartaoId) { return usadoCartaoDetalhado(cartaoId).total; }
 
   function lembretesPendentes() {
     return App.state.lancamentos
@@ -172,6 +181,7 @@ window.App = window.App || {};
     rendaTotalDoMes: rendaTotalDoMes,
     saldoDoMes: saldoDoMes,
     usadoCartao: usadoCartao,
+    usadoCartaoDetalhado: usadoCartaoDetalhado,
     lembretesPendentes: lembretesPendentes,
     gastosPorCategoria: gastosPorCategoria,
     saldoUltimosMeses: saldoUltimosMeses,

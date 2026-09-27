@@ -243,9 +243,14 @@ window.App = window.App || {};
   function renderCartoes() {
     if (App.state.cartoes.length === 0) return emptyState("cartoes");
     return App.state.cartoes.map(function (c) {
-      var usado = data.usadoCartao(c.id);
+      var det = data.usadoCartaoDetalhado(c.id);
+      var usado = det.total;
       var restante = c.limite - usado;
       var pct = c.limite > 0 ? Math.min(100, (usado / c.limite) * 100) : 0;
+      var partes = [];
+      if (det.recorrente > 0) partes.push(u.fmtBRL.format(det.recorrente) + " recorrentes deste mês");
+      if (det.parcelado > 0) partes.push(u.fmtBRL.format(det.parcelado) + " em parcelas abertas");
+      var detalhe = partes.length ? '<p class="cartao-detalhe">' + valSpan(partes.join(" · ")) + "</p>" : "";
       return (
         '<div class="card cartao-item" data-cartao="' + c.id + '">' +
           '<div class="head"><h3>' + u.escapeHtml(c.nome) + '</h3>' +
@@ -256,6 +261,7 @@ window.App = window.App || {};
             "<span>Usado" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(usado)) + "</b></span>" +
             "<span>Restante" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(restante)) + "</b></span>" +
           "</div>" +
+          detalhe +
           '<div class="bar-track"><div class="bar-fill' + (pct > 80 ? " high" : "") + '" style="width:' + pct.toFixed(1) + '%"></div></div>' +
         "</div>"
       );
