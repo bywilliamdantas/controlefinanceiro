@@ -13,8 +13,6 @@
   --shadow: rgba(22, 33, 28, 0.08);
   --radius: 16px;
   box-sizing: border-box;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -31,6 +29,11 @@
   --shadow: rgba(0, 0, 0, 0.35);
 }
 * { box-sizing: border-box; }
+/* Notch/status-bar (topo) e home-indicator/gesto (embaixo) são tratados
+   diretamente em quem realmente encosta na borda da tela (header.topbar,
+   nav.tabbar, .fab, .sheet, .toast) via env(safe-area-inset-*). Não dá pra
+   resolver isso só com padding no :root/html porque o body usa
+   position:fixed com inset:0, que ignora o padding do elemento pai. */
 html {
   scroll-padding-top: env(safe-area-inset-top, 0px);
   height: 100%; height: 100dvh;
@@ -80,7 +83,7 @@ body {
 @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
 
 header.topbar {
-  padding: 14px 20px 12px;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 20px 12px;
   display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
 }
 header.topbar h1 { font-size: 20px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
@@ -197,7 +200,7 @@ label.field { display: block; font-size: 13px; color: var(--ink-soft); margin-bo
 
 nav.tabbar {
   flex-shrink: 0; display: flex; border-top: 1px solid var(--border); background: var(--surface);
-  position: relative;
+  position: relative; padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 nav.tabbar button {
   flex: 1; background: none; border: none; padding: 10px 4px 8px; display: flex; flex-direction: column;
@@ -207,14 +210,14 @@ nav.tabbar button.active { color: var(--teal); }
 nav.tabbar svg { width: 21px; height: 21px; }
 
 .fab {
-  position: absolute; right: 20px; bottom: 78px;
+  position: absolute; right: 20px; bottom: calc(78px + env(safe-area-inset-bottom, 0px));
   width: 52px; height: 52px; border-radius: 50%; background: var(--teal); color: var(--surface);
   border: none; display: flex; align-items: center; justify-content: center;
   box-shadow: 0 6px 18px var(--shadow); cursor: pointer;
 }
 .fab svg { width: 24px; height: 24px; }
 
-.eye-toggle { background: var(--surface-2); border: none; color: var(--ink); border-radius: 9px; padding: 7px; display: flex; cursor: pointer; }
+.eye-toggle { background: var(--surface-2); border: none; color: var(--ink); border-radius: 9px; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .eye-toggle svg { width: 17px; height: 17px; }
 
 .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: flex-end; z-index: 20; }
@@ -225,8 +228,8 @@ nav.tabbar svg { width: 21px; height: 21px; }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .sheet-head h2 { margin: 0; font-size: 18px; }
 
-.top-actions { display: flex; gap: 10px; }
-.top-actions button { background: var(--surface-2); border: none; color: var(--ink); border-radius: 9px; padding: 7px; display: flex; cursor: pointer; }
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.top-actions button { background: var(--surface-2); border: none; color: var(--ink); border-radius: 9px; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .top-actions button.active { background: var(--teal); color: var(--surface); }
 
 /* ==== Toasts ==== */
@@ -247,9 +250,13 @@ nav.tabbar svg { width: 21px; height: 21px; }
 .toast-undo-btn { background: none; border: none; color: var(--teal); font-weight: 600; font-size: 13px; cursor: pointer; padding: 0; flex-shrink: 0; }
 
 .month-nav { display: flex; align-items: center; gap: 2px; }
-.month-nav button { background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 4px; display: flex; align-items: center; }
-.month-nav button:hover { color: var(--teal); }
-.month-nav svg { width: 16px; height: 16px; }
+.month-nav button {
+  background: none; border: none; color: var(--ink-soft); cursor: pointer;
+  width: 32px; height: 32px; padding: 0; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease;
+}
+.month-nav button:hover, .month-nav button:active { color: var(--teal); background: var(--surface-2); }
+.month-nav svg { width: 17px; height: 17px; }
 
 .lembretes-card .lembrete-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .lembretes-card .lembrete-row:last-child { border-bottom: none; }
