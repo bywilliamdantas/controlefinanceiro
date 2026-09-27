@@ -178,7 +178,7 @@ window.App = window.App || {};
           : lista.map(function (r) {
               return '<div class="lembrete-row"><span class="t">' + u.escapeHtml(r.titulo) + '</span>' +
                 '<span class="num" style="font-size:13px">' + valSpan(u.fmtBRL.format(r.valor)) + "</span>" +
-                '<button class="icon-btn" data-del-receita="' + r.id + '" aria-label="Excluir">' + ICONS.trash + "</button></div>";
+                '<button class="icon-btn icon-btn-del" data-del-receita="' + r.id + '" aria-label="Excluir">' + ICONS.trash + "</button></div>";
             }).join("")
         ) +
       "</div>"
@@ -228,6 +228,13 @@ window.App = window.App || {};
         '<div class="btn-row">' +
           '<button class="btn btn-ghost" id="btnPinConfig">' + (sec.pinAtivo() ? "Alterar/remover PIN" : "Ativar PIN de acesso") + "</button>" +
         "</div>" +
+      "</div>" +
+      '<div class="card">' +
+        '<p class="card-label">Aplicativo</p>' +
+        '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Se o app parecer desatualizado (mesmo depois de instalado na tela inicial), use este botão para forçar a sincronização com a versão mais recente. Seus dados salvos não são apagados.</p>' +
+        '<div class="btn-row">' +
+          '<button class="btn btn-ghost" id="btnForceSync">Atualizar</button>' +
+        "</div>" +
       "</div>"
     );
   }
@@ -242,7 +249,7 @@ window.App = window.App || {};
       return (
         '<div class="card cartao-item" data-cartao="' + c.id + '">' +
           '<div class="head"><h3>' + u.escapeHtml(c.nome) + '</h3>' +
-            '<button class="icon-btn" data-del-cartao="' + c.id + '" aria-label="Excluir cartão">' + ICONS.trash + "</button>" +
+            '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir cartão">' + ICONS.trash + "</button>" +
           "</div>" +
           '<div class="cartao-stats">' +
             "<span>Limite" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(c.limite)) + "</b></span>" +
@@ -336,7 +343,7 @@ window.App = window.App || {};
       var acoes = selecionando
         ? ""
         : '<button class="icon-btn" data-edit-lanc="' + l.id + '" aria-label="Editar">' + ICONS.edit + "</button>" +
-          '<button class="icon-btn" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "</button>";
+          '<button class="icon-btn icon-btn-del" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "</button>";
       return (
         '<div class="lanc-item' + rowClass + (checked ? " selected" : "") + '" data-lanc="' + l.id + '">' +
           indicador +
@@ -452,6 +459,11 @@ window.App = window.App || {};
 
     var btnPinConfig = document.getElementById("btnPinConfig");
     if (btnPinConfig) btnPinConfig.addEventListener("click", function () { App.sheets.openPinConfigSheet(); });
+    var btnForceSync = document.getElementById("btnForceSync");
+    if (btnForceSync) btnForceSync.addEventListener("click", function () {
+      if (!window.confirm("Isso vai buscar a versão mais nova do app e recarregar a página. Seus dados salvos continuam intactos. Continuar?")) return;
+      App.backup.forcarSincronizacao();
+    });
     var btnDefinirMeta = document.getElementById("btnDefinirMeta");
     if (btnDefinirMeta) btnDefinirMeta.addEventListener("click", function () { App.sheets.openMetaSheet(mesSelecionado); });
     var btnAddReceitaExtra = document.getElementById("btnAddReceitaExtra");

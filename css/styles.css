@@ -128,10 +128,22 @@ label.field { display: block; font-size: 13px; color: var(--ink-soft); margin-bo
 .bar-track { height: 7px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 5px; background: var(--teal); transition: width .3s ease; }
 .bar-fill.high { background: var(--red); }
-.icon-btn { background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 4px; display: flex; }
-.icon-btn:hover { color: var(--red); }
+.icon-btn {
+  background: none; border: none; color: var(--ink-soft); cursor: pointer;
+  width: 36px; height: 36px; padding: 0; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: background .15s ease, color .15s ease;
+}
+.icon-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.icon-btn:hover { color: var(--red); background: var(--surface-2); }
+.icon-btn:active { background: var(--surface-2); }
+/* Botão de excluir: sempre visível em vermelho, com toque grande e destaque
+   de fundo — antes ficava cinza-claro e quase invisível na lista. */
+.icon-btn-del { color: var(--red); }
+.icon-btn-del:hover, .icon-btn-del:active { background: var(--red-soft); color: var(--red); }
 
 .lanc-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+.lanc-item .icon-btn + .icon-btn { margin-left: 2px; }
 .lanc-item:last-child { border-bottom: none; }
 .lanc-item.selected { background: var(--teal-soft); }
 .lanc-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--teal); transition: transform .2s ease; }

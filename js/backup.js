@@ -86,5 +86,38 @@ window.App = window.App || {};
     reader.readAsText(file);
   }
 
-  App.backup = { exportarCSV: exportarCSV, exportarBackup: exportarBackup, importarBackup: importarBackup, baixarArquivo: baixarArquivo };
+  // Força uma sincronização completa do app: desregistra o service worker
+  // atual, apaga todo o Cache Storage (os arquivos estáticos que ficam
+  // guardados no aparelho para uso offline) e recarrega a página ignorando
+  // o cache do navegador. Isso resolve o caso comum de PWA instalado na
+  // tela inicial que continua preso numa versão antiga porque o service
+  // worker serve os arquivos em cache antes de checar a rede. Não mexe no
+  // localStorage, então nenhum lançamento, cartão ou configuração é apagado.
+  async function forcarSincronizacao() {
+    if (App.ui && App.ui.toast) App.ui.toast("Sincronizando...");
+    try {
+      if ("serviceWorker" in navigator) {
+        var regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(function (r) { return r.unregister().catch(function () {}); }));
+      }
+    } catch (e) { console.warn("unregister sw failed", e); }
+    try {
+      if (window.caches && caches.keys) {
+        var keys = await caches.keys();
+        await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+      }
+    } catch (e2) { console.warn("clear caches failed", e2); }
+    setTimeout(function () {
+      var base = location.href.split("#")[0].split("?")[0];
+      location.href = base + "?sync=" + Date.now();
+    }, 300);
+  }
+
+  App.backup = {
+    exportarCSV: exportarCSV,
+    exportarBackup: exportarBackup,
+    importarBackup: importarBackup,
+    baixarArquivo: baixarArquivo,
+    forcarSincronizacao: forcarSincronizacao
+  };
 })(window.App);
