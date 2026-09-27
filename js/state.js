@@ -97,24 +97,23 @@ window.App = window.App || {};
   function rendaTotalDoMes(mes) { return salarioDoMes(mes) + receitasExtrasDoMes(mes); }
   function saldoDoMes(mes) { return rendaTotalDoMes(mes) - despesasDoMes(mes); }
 
-  // Uso do cartão: soma os lançamentos em aberto vinculados a ele. Lançamentos
-  // recorrentes só entram na conta no mês em que vencem — cada mês futuro já
-  // foi pré-criado no banco, mas eles não devem se acumular todos de uma vez
-  // (senão um streaming de R$30/mês por 12 meses pareceria R$360 de uso hoje).
-  // Assim que o mês vira, o mês anterior sai da conta sozinho (nem precisa
-  // estar marcado como pago pra isso) e o mês atual passa a contar no lugar.
-  // Parcelamentos são diferentes: são uma dívida única dividida em partes, e
-  // como no cartão de crédito real, a compra consome o limite inteiro assim
-  // que é feita — por isso TODAS as parcelas em aberto (de qualquer mês,
-  // passado ou futuro) somam juntas, e só liberam limite conforme cada
-  // parcela é paga.
+  // Uso do cartão: soma os lançamentos em aberto vinculados a ele. Recorrentes
+  // e parcelados agora seguem a MESMA regra, igual ao cartão de crédito real:
+  // o valor consome limite assim que a fatura daquele mês "vence" (chega a
+  // data), e continua consumindo até o usuário marcar como pago — não é mais
+  // liberado sozinho quando o mês vira. Por isso somamos todo recorrente cujo
+  // vencimento já chegou (mês atual ou algum mês passado que ficou em aberto,
+  // ou seja, atrasado) e ainda não foi pago; meses futuros que ainda não
+  // venceram não entram na conta. Parcelados continuam somando todas as
+  // parcelas em aberto de qualquer mês, porque a compra inteira já consumiu o
+  // limite no ato da compra, liberando conforme cada parcela é paga.
   function usadoCartaoDetalhado(cartaoId) {
     var mesAtual = u.todayISO().slice(0, 7);
     var recorrente = 0, parcelado = 0;
     App.state.lancamentos.forEach(function (l) {
       if (l.cartaoId !== cartaoId || l.status !== "aberto") return;
       if (l.recorrente) {
-        if (l.vencimento.slice(0, 7) === mesAtual) recorrente += l.valor;
+        if (l.vencimento.slice(0, 7) <= mesAtual) recorrente += l.valor;
       } else {
         parcelado += l.valor;
       }

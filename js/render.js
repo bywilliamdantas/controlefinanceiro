@@ -248,7 +248,7 @@ window.App = window.App || {};
       var restante = c.limite - usado;
       var pct = c.limite > 0 ? Math.min(100, (usado / c.limite) * 100) : 0;
       var partes = [];
-      if (det.recorrente > 0) partes.push(u.fmtBRL.format(det.recorrente) + " recorrentes deste mês");
+      if (det.recorrente > 0) partes.push(u.fmtBRL.format(det.recorrente) + " recorrentes em aberto");
       if (det.parcelado > 0) partes.push(u.fmtBRL.format(det.parcelado) + " em parcelas abertas");
       var detalhe = partes.length ? '<p class="cartao-detalhe">' + valSpan(partes.join(" · ")) + "</p>" : "";
       return (
