@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Controle Financeiro</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Financeiro">
+<meta name="theme-color" content="#0E6B5C">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="icon" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="splash">
+  <img src="assets/icon.png" alt="">
+  <div class="splash-title">Controle Financeiro</div>
+</div>
+
+<div id="lockScreen" style="display:none"></div>
+
+<div id="app">
+  <header class="topbar">
+    <div>
+      <h1 id="pageTitle">Resumo</h1>
+      <div class="month-label" id="monthLabel"></div>
+    </div>
+    <div class="top-actions" id="topActions"></div>
+  </header>
+  <main id="main"></main>
+  <button class="fab" id="fab" style="display:none" aria-label="Adicionar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
+  <nav class="tabbar" id="tabbar"></nav>
+</div>
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script src="js/utils.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/state.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/security.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/render.js"></script>
+<script src="js/sheets.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "Controle Financeiro",
+  "short_name": "Financeiro",
+  "description": "Controle de gastos, cartões e lançamentos",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EEF0EC",
+  "theme_color": "#0E6B5C",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "assets/icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon.png", "sizes": "180x180", "type": "image/png", "purpose": "maskable" }
+  ]
+}
