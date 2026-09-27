@@ -123,6 +123,21 @@ window.App = window.App || {};
   }
   function usadoCartao(cartaoId) { return usadoCartaoDetalhado(cartaoId).total; }
 
+  // Próxima data de vencimento de um cartão a partir de hoje: se o dia de
+  // vencimento configurado ainda não passou neste mês, usa este mês; senão,
+  // pula pro mês seguinte. Retorna null se o cartão não tiver dia definido.
+  function proximoVencimentoCartao(cartaoId) {
+    var c = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
+    if (!c || !c.diaVencimento) return null;
+    var hoje = new Date();
+    var ano = hoje.getFullYear(), mes = hoje.getMonth(), diaHoje = hoje.getDate();
+    if (c.diaVencimento < diaHoje) mes += 1;
+    var lastDay = new Date(ano, mes + 1, 0).getDate();
+    var dia = Math.min(c.diaVencimento, lastDay);
+    var d = new Date(ano, mes, dia);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
   function lembretesPendentes() {
     return App.state.lancamentos
       .filter(function (l) { return l.status === "aberto" && u.diasAte(l.vencimento) <= 7; })
@@ -182,6 +197,7 @@ window.App = window.App || {};
     saldoDoMes: saldoDoMes,
     usadoCartao: usadoCartao,
     usadoCartaoDetalhado: usadoCartaoDetalhado,
+    proximoVencimentoCartao: proximoVencimentoCartao,
     lembretesPendentes: lembretesPendentes,
     gastosPorCategoria: gastosPorCategoria,
     saldoUltimosMeses: saldoUltimosMeses,

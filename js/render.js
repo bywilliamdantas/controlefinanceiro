@@ -253,8 +253,11 @@ window.App = window.App || {};
       var detalhe = partes.length ? '<p class="cartao-detalhe">' + valSpan(partes.join(" · ")) + "</p>" : "";
       return (
         '<div class="card cartao-item" data-cartao="' + c.id + '">' +
-          '<div class="head"><h3>' + u.escapeHtml(c.nome) + '</h3>' +
-            '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir cartão">' + ICONS.trash + "</button>" +
+          '<div class="head"><h3>' + u.escapeHtml(c.nome) + (c.diaVencimento ? ' <span class="cartao-venc-tag">vence dia ' + c.diaVencimento + "</span>" : "") + '</h3>' +
+            '<div>' +
+              '<button class="icon-btn" data-edit-cartao="' + c.id + '" aria-label="Editar cartão">' + ICONS.edit + "</button>" +
+              '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir cartão">' + ICONS.trash + "</button>" +
+            "</div>" +
           "</div>" +
           '<div class="cartao-stats">' +
             "<span>Limite" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(c.limite)) + "</b></span>" +
@@ -483,6 +486,16 @@ window.App = window.App || {};
         if (idx === -1) return;
         var item = App.state.receitasExtras[idx];
         excluirComUndo(App.state.receitasExtras, idx, item, "Receita extra excluída");
+      });
+    });
+
+    document.querySelectorAll("[data-edit-cartao]").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var id = btn.getAttribute("data-edit-cartao");
+        var c = App.state.cartoes.filter(function (x) { return x.id === id; })[0];
+        if (!c) return;
+        App.sheets.openCartaoSheet(c);
       });
     });
 

@@ -25,30 +25,52 @@ window.App = window.App || {};
   }
 
   // ---- Cartão ----
-  function openCartaoSheet() {
+  // Sem `existing`: cria cartão novo. Com `existing`: edita nome, limite e dia
+  // de vencimento do cartão já cadastrado, sem precisar excluir e recriar.
+  function openCartaoSheet(existing) {
+    var editMode = !!existing;
     var root = document.getElementById("modalRoot");
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop">' +
         '<div class="sheet">' +
-          '<div class="sheet-head"><h2>Novo cartão</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
-          '<label class="field">Nome<input id="fNome" type="text" placeholder="Ex: Nubank">' +
+          '<div class="sheet-head"><h2>' + (editMode ? "Editar cartão" : "Novo cartão") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          '<label class="field">Nome<input id="fNome" type="text" placeholder="Ex: Nubank" value="' + (editMode ? u.escapeHtml(existing.nome) : "") + '">' +
             '<span class="field-error-msg" id="errNome"></span></label>' +
-          '<label class="field">Limite<input id="fLimite" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00">' +
+          '<label class="field">Limite<input id="fLimite" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (editMode ? existing.limite : "") + '">' +
             '<span class="field-error-msg" id="errLimite"></span></label>' +
+          '<label class="field">Dia de vencimento (opcional)<input id="fDiaVenc" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 10" value="' + (editMode && existing.diaVencimento ? existing.diaVencimento : "") + '">' +
+            '<span class="field-error-msg" id="errDiaVenc"></span></label>' +
+          '<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 12px">Definindo o dia, os lançamentos nesse cartão já vêm com a data preenchida automaticamente.</p>' +
           '<div class="btn-row"><button class="btn btn-primary" id="fSave">Salvar</button></div>' +
         "</div>" +
       "</div>";
     bindBackdropClose(root);
     document.getElementById("fSave").addEventListener("click", function () {
-      clearAllErrors([["fNome", "errNome"], ["fLimite", "errLimite"]]);
+      clearAllErrors([["fNome", "errNome"], ["fLimite", "errLimite"], ["fDiaVenc", "errDiaVenc"]]);
       var nome = document.getElementById("fNome").value.trim();
       var limite = document.getElementById("fLimite").value;
+      var diaVencRaw = document.getElementById("fDiaVenc").value;
       var ok = true;
       if (!nome) { setFieldError("fNome", "errNome", "Dê um nome ao cartão"); ok = false; }
       var limiteNum = parseFloat(limite);
       if (limite === "" || isNaN(limiteNum) || limiteNum < 0) { setFieldError("fLimite", "errLimite", "Informe um limite válido"); ok = false; }
+      var diaVencNum = null;
+      if (diaVencRaw !== "") {
+        diaVencNum = parseInt(diaVencRaw, 10);
+        if (isNaN(diaVencNum) || diaVencNum < 1 || diaVencNum > 31) { setFieldError("fDiaVenc", "errDiaVenc", "Dia entre 1 e 31"); ok = false; }
+      }
       if (!ok) return;
-      App.state.cartoes.push({ id: u.uid(), nome: nome, limite: limiteNum });
+
+      if (editMode) {
+        Object.assign(existing, { nome: nome, limite: limiteNum, diaVencimento: diaVencNum });
+        data.saveState();
+        closeSheet();
+        App.ui.render();
+        App.ui.toastSuccess("Cartão atualizado");
+        return;
+      }
+
+      App.state.cartoes.push({ id: u.uid(), nome: nome, limite: limiteNum, diaVencimento: diaVencNum });
       data.saveState();
       closeSheet();
       App.ui.render();
@@ -117,9 +139,20 @@ window.App = window.App || {};
 
     var meioSelect = document.getElementById("fMeio");
     var cartaoWrap = document.getElementById("cartaoWrap");
+    var cartaoSelect = document.getElementById("fCartao");
+    var dataInput = document.getElementById("fData");
     function syncCartaoWrap() { cartaoWrap.style.display = meioSelect.value === "Cartão de crédito" ? "block" : "none"; }
     meioSelect.addEventListener("change", syncCartaoWrap);
     syncCartaoWrap();
+
+    // Ao escolher um cartão com dia de vencimento configurado, preenche a
+    // data automaticamente com a próxima data de vencimento dele — assim o
+    // usuário não precisa escolher a data manualmente todo lançamento.
+    cartaoSelect.addEventListener("change", function () {
+      if (!cartaoSelect.value) return;
+      var proxima = data.proximoVencimentoCartao(cartaoSelect.value);
+      if (proxima) dataInput.value = proxima;
+    });
 
     var tipoSelect = document.getElementById("fTipo");
     if (tipoSelect) {
