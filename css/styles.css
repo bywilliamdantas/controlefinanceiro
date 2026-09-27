@@ -230,6 +230,7 @@ nav.tabbar svg { width: 21px; height: 21px; }
 
 .top-actions { display: flex; align-items: center; gap: 8px; }
 .top-actions button { background: var(--surface-2); border: none; color: var(--ink); border-radius: 9px; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.top-actions button svg { width: 17px; height: 17px; flex-shrink: 0; }
 .top-actions button.active { background: var(--teal); color: var(--surface); }
 
 /* ==== Toasts ==== */
@@ -291,7 +292,8 @@ nav.tabbar svg { width: 21px; height: 21px; }
 /* ==== Categorias custom ==== */
 .cat-manage-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
 .cat-chip { background: var(--surface-2); border-radius: 20px; padding: 6px 12px; font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
-.cat-chip button { background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 0; display: flex; }
+.cat-chip button { background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; }
+.cat-chip button svg { width: 13px; height: 13px; flex-shrink: 0; }
 .cat-chip button:hover { color: var(--red); }
 
 @media (max-width: 380px) {
