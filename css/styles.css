@@ -178,7 +178,7 @@ label.field { display: block; font-size: 13px; color: var(--ink-soft); margin-bo
 
 nav.tabbar {
   flex-shrink: 0; display: flex; border-top: 1px solid var(--border); background: var(--surface);
-  padding-bottom: env(safe-area-inset-bottom, 0px); position: relative;
+  position: relative;
 }
 nav.tabbar button {
   flex: 1; background: none; border: none; padding: 10px 4px 8px; display: flex; flex-direction: column;
@@ -188,7 +188,7 @@ nav.tabbar button.active { color: var(--teal); }
 nav.tabbar svg { width: 21px; height: 21px; }
 
 .fab {
-  position: absolute; right: 20px; bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  position: absolute; right: 20px; bottom: 78px;
   width: 52px; height: 52px; border-radius: 50%; background: var(--teal); color: var(--surface);
   border: none; display: flex; align-items: center; justify-content: center;
   box-shadow: 0 6px 18px var(--shadow); cursor: pointer;
