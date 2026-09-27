@@ -16,6 +16,7 @@ window.App = window.App || {};
   function defaultState() {
     return {
       salario: 0,
+      salarios: {},             // { "YYYY-MM": valor } — renda fixa por mês
       receitasExtras: [],       // [{id, titulo, valor, mes: "YYYY-MM"}]
       cartoes: [],
       lancamentos: [],
@@ -32,12 +33,21 @@ window.App = window.App || {};
       if (raw) {
         var parsed = JSON.parse(raw);
         var base = defaultState();
-        return Object.assign(base, parsed, {
+        var merged = Object.assign(base, parsed, {
           receitasExtras: parsed.receitasExtras || [],
           categoriasCustom: parsed.categoriasCustom || [],
           metas: parsed.metas || {},
+          salarios: parsed.salarios || {},
           prefs: Object.assign(base.prefs, parsed.prefs || {})
         });
+        // Migração: quem já tinha um salário único fixo vira o valor "base"
+        // a partir do mês corrente, sem apagar nada — os meses passados
+        // continuam usando o mesmo valor até o usuário definir outro.
+        if (Object.keys(merged.salarios).length === 0 && merged.salario) {
+          var mesAtualMig = new Date().toISOString().slice(0, 7);
+          merged.salarios[mesAtualMig] = merged.salario;
+        }
+        return merged;
       }
     } catch (e) { console.warn("storage read failed", e); }
     return defaultState();
@@ -67,7 +77,24 @@ window.App = window.App || {};
       .filter(function (r) { return r.mes === mes; })
       .reduce(function (s, r) { return s + r.valor; }, 0);
   }
-  function rendaTotalDoMes(mes) { return App.state.salario + receitasExtrasDoMes(mes); }
+  // Salário do mês: usa o valor definido especificamente para `mes`; se não
+  // houver, repete o valor do mês definido mais recente anterior a ele (o
+  // salário "vale" pra frente até ser alterado de novo). Alterar um mês
+  // nunca muda os valores já usados nos meses anteriores.
+  function salarioDoMes(mes) {
+    var chaves = Object.keys(App.state.salarios).sort();
+    if (chaves.length === 0) return 0;
+    var melhor = null;
+    for (var i = 0; i < chaves.length; i++) {
+      if (chaves[i] <= mes) melhor = chaves[i]; else break;
+    }
+    if (melhor === null) return 0; // todos os valores definidos são de meses futuros
+    return App.state.salarios[melhor];
+  }
+  function definirSalarioDoMes(mes, valor) {
+    App.state.salarios[mes] = valor;
+  }
+  function rendaTotalDoMes(mes) { return salarioDoMes(mes) + receitasExtrasDoMes(mes); }
   function saldoDoMes(mes) { return rendaTotalDoMes(mes) - despesasDoMes(mes); }
 
   function usadoCartao(cartaoId) {
@@ -129,6 +156,8 @@ window.App = window.App || {};
     lancamentosDoMes: lancamentosDoMes,
     despesasDoMes: despesasDoMes,
     receitasExtrasDoMes: receitasExtrasDoMes,
+    salarioDoMes: salarioDoMes,
+    definirSalarioDoMes: definirSalarioDoMes,
     rendaTotalDoMes: rendaTotalDoMes,
     saldoDoMes: saldoDoMes,
     usadoCartao: usadoCartao,

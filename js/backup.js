@@ -56,8 +56,17 @@ window.App = window.App || {};
         }
         if (!window.confirm("Importar este backup vai substituir todos os dados atuais. Continuar?")) return;
         var base = App.data.defaultState();
+        var salariosImportados = dados.salarios || {};
+        // Compatibilidade com backups antigos (v2 sem salário por mês): se não
+        // houver mapa de salários mas existir o antigo campo único, usa-o a
+        // partir do mês da exportação.
+        if (Object.keys(salariosImportados).length === 0 && dados.salario) {
+          var mesRef = (parsed && parsed.exportadoEm ? parsed.exportadoEm : u.todayISO()).slice(0, 7);
+          salariosImportados[mesRef] = Number(dados.salario) || 0;
+        }
         App.state = Object.assign(base, {
           salario: Number(dados.salario) || 0,
+          salarios: salariosImportados,
           cartoes: dados.cartoes,
           lancamentos: dados.lancamentos,
           receitasExtras: dados.receitasExtras || [],

@@ -8,7 +8,8 @@ window.App = window.App || {};
   var TABS = [
     { id: "resumo", label: "Resumo", icon: ICONS.resumo },
     { id: "cartoes", label: "Cartões", icon: ICONS.cartoes },
-    { id: "lancamentos", label: "Lançamentos", icon: ICONS.lancamentos }
+    { id: "lancamentos", label: "Lançamentos", icon: ICONS.lancamentos },
+    { id: "ajustes", label: "Ajustes", icon: ICONS.settings }
   ];
 
   var tab = "resumo";
@@ -188,8 +189,9 @@ window.App = window.App || {};
     return (
       renderLembretesCard() +
       '<div class="card">' +
-        '<p class="card-label">Renda mensal fixa</p>' +
-        '<input id="salarioInput" type="number" inputmode="decimal" step="0.01" min="0" value="' + (App.state.salario || "") + '" placeholder="0,00">' +
+        '<p class="card-label">Renda fixa em ' + u.fmtMonth(mesSelecionado) + '</p>' +
+        '<input id="salarioInput" type="number" inputmode="decimal" step="0.01" min="0" value="' + (data.salarioDoMes(mesSelecionado) || "") + '" placeholder="0,00">' +
+        '<p style="font-size:12px;color:var(--ink-soft);margin:8px 0 0">Vale a partir de ' + u.fmtMonth(mesSelecionado) + '; meses anteriores não mudam.</p>' +
       "</div>" +
       renderReceitasExtrasCard() +
       '<div class="card">' +
@@ -203,7 +205,13 @@ window.App = window.App || {};
       renderComparativoCard() +
       renderMetaCard() +
       renderGraficoCategoriaCard() +
-      renderGraficoEvolucaoCard() +
+      renderGraficoEvolucaoCard()
+    );
+  }
+
+  // ---- Ajustes ----
+  function renderAjustes() {
+    return (
       '<div class="card">' +
         '<p class="card-label">Backup dos dados</p>' +
         '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Seus dados ficam salvos só neste navegador. Exporte um backup de vez em quando para não perdê-los.</p>' +
@@ -348,14 +356,15 @@ window.App = window.App || {};
   function render() {
     document.getElementById("pageTitle").textContent = TABS.filter(function (t) { return t.id === tab; })[0].label;
     document.getElementById("monthLabel").textContent = tab === "resumo" ? u.capitalize(u.fmtMonth(mesSelecionado)) : "";
-    document.getElementById("fab").style.display = tab === "resumo" ? "none" : "flex";
+    document.getElementById("fab").style.display = (tab === "cartoes" || tab === "lancamentos") ? "flex" : "none";
     renderTabbar();
     renderTopActions();
     var main = document.getElementById("main");
     main.classList.remove("tab-enter");
     if (tab === "resumo") main.innerHTML = renderResumo();
     else if (tab === "cartoes") main.innerHTML = renderCartoes();
-    else main.innerHTML = renderLancamentos();
+    else if (tab === "lancamentos") main.innerHTML = renderLancamentos();
+    else main.innerHTML = renderAjustes();
     void main.offsetWidth;
     main.classList.add("tab-enter");
     bindMainEvents();
@@ -365,7 +374,7 @@ window.App = window.App || {};
     var salarioInput = document.getElementById("salarioInput");
     if (salarioInput) {
       salarioInput.addEventListener("input", function () {
-        App.state.salario = parseFloat(salarioInput.value) || 0;
+        data.definirSalarioDoMes(mesSelecionado, parseFloat(salarioInput.value) || 0);
         data.saveState();
         var saldoEl = document.getElementById("saldoValue");
         if (saldoEl) {
