@@ -1,7 +1,7 @@
 // Service worker simples: cacheia o "app shell" no install e serve
 // tudo (cache-first, com fallback pra rede) depois disso, permitindo
 // abrir o app offline após a primeira visita.
-var CACHE_NAME = "financeiro-v2";
+var CACHE_NAME = "financeiro-v3";
 var APP_SHELL = [
   "./",
   "./index.html",

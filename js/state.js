@@ -97,9 +97,20 @@ window.App = window.App || {};
   function rendaTotalDoMes(mes) { return salarioDoMes(mes) + receitasExtrasDoMes(mes); }
   function saldoDoMes(mes) { return rendaTotalDoMes(mes) - despesasDoMes(mes); }
 
+  // Uso do cartão: soma os lançamentos em aberto vinculados a ele. Lançamentos
+  // recorrentes só entram na conta no mês em que vencem — cada mês futuro já
+  // foi pré-criado no banco, mas eles não devem se acumular todos de uma vez
+  // (senão um streaming de R$30/mês por 12 meses pareceria R$360 de uso hoje).
+  // Assim que o mês é pago, o valor libera; no mês seguinte a parcela
+  // recorrente daquele mês passa a contar no lugar.
   function usadoCartao(cartaoId) {
+    var mesAtual = u.todayISO().slice(0, 7);
     return App.state.lancamentos
-      .filter(function (l) { return l.cartaoId === cartaoId && l.status === "aberto"; })
+      .filter(function (l) {
+        if (l.cartaoId !== cartaoId || l.status !== "aberto") return false;
+        if (l.recorrente) return l.vencimento.slice(0, 7) === mesAtual;
+        return true;
+      })
       .reduce(function (s, l) { return s + l.valor; }, 0);
   }
 
