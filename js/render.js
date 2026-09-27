@@ -15,6 +15,8 @@ window.App = window.App || {};
   var tab = "resumo";
   var mesSelecionado = new Date().toISOString().slice(0, 7);
   var filtros = { texto: "", categoria: "", cartaoId: "" };
+  var selecionando = false;      // modo de seleção em massa (aba Lançamentos)
+  var selecionados = [];         // ids dos lançamentos selecionados
 
   // ---- Toasts ----
   var toastTimer = null;
@@ -189,12 +191,6 @@ window.App = window.App || {};
     return (
       renderLembretesCard() +
       '<div class="card">' +
-        '<p class="card-label">Renda fixa em ' + u.fmtMonth(mesSelecionado) + '</p>' +
-        '<input id="salarioInput" type="number" inputmode="decimal" step="0.01" min="0" value="' + (data.salarioDoMes(mesSelecionado) || "") + '" placeholder="0,00">' +
-        '<p style="font-size:12px;color:var(--ink-soft);margin:8px 0 0">Vale a partir de ' + u.fmtMonth(mesSelecionado) + '; meses anteriores não mudam.</p>' +
-      "</div>" +
-      renderReceitasExtrasCard() +
-      '<div class="card">' +
         '<p class="card-label">Despesas em ' + u.fmtMonth(mesSelecionado) + '</p>' +
         '<p class="big-number num">' + valSpan(u.fmtBRL.format(d)) + "</p>" +
       "</div>" +
@@ -212,6 +208,12 @@ window.App = window.App || {};
   // ---- Ajustes ----
   function renderAjustes() {
     return (
+      '<div class="card">' +
+        '<p class="card-label">Renda fixa em ' + u.fmtMonth(mesSelecionado) + '</p>' +
+        '<input id="salarioInput" type="number" inputmode="decimal" step="0.01" min="0" value="' + (data.salarioDoMes(mesSelecionado) || "") + '" placeholder="0,00">' +
+        '<p style="font-size:12px;color:var(--ink-soft);margin:8px 0 0">Vale a partir de ' + u.fmtMonth(mesSelecionado) + '; meses anteriores não mudam.</p>' +
+      "</div>" +
+      renderReceitasExtrasCard() +
       '<div class="card">' +
         '<p class="card-label">Backup dos dados</p>' +
         '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Seus dados ficam salvos só neste navegador. Exporte um backup de vez em quando para não perdê-los.</p>' +
@@ -285,6 +287,25 @@ window.App = window.App || {};
     );
   }
 
+  function renderBulkBar() {
+    var visiveis = lancamentosFiltrados().map(function (l) { return l.id; });
+    var todosSelecionados = visiveis.length > 0 && visiveis.every(function (id) { return selecionados.indexOf(id) !== -1; });
+    var n = selecionados.length;
+    return (
+      '<div class="bulk-bar">' +
+        '<button class="icon-btn" id="bulkClose" aria-label="Cancelar seleção">' + ICONS.close + "</button>" +
+        '<span class="bulk-count">' + n + (n === 1 ? " selecionado" : " selecionados") + "</span>" +
+        '<div class="bulk-actions">' +
+          '<button class="btn-bulk" id="bulkSelectAll">' + (todosSelecionados ? "Limpar" : "Todos") + "</button>" +
+          '<button class="btn-bulk" id="bulkEditar"' + (n === 0 ? " disabled" : "") + '>Editar</button>' +
+          '<button class="btn-bulk" id="bulkPago"' + (n === 0 ? " disabled" : "") + '>Pago</button>' +
+          '<button class="btn-bulk" id="bulkAberto"' + (n === 0 ? " disabled" : "") + '>Aberto</button>' +
+          '<button class="btn-bulk danger" id="bulkExcluir"' + (n === 0 ? " disabled" : "") + '>Excluir</button>' +
+        "</div>" +
+      "</div>"
+    );
+  }
+
   function renderLancamentos() {
     var filtrando = !!(filtros.texto || filtros.categoria || filtros.cartaoId);
     if (App.state.lancamentos.length === 0) return emptyState("lancamentos");
@@ -294,7 +315,7 @@ window.App = window.App || {};
     var ordenados = lista.slice().sort(function (a, b) { return b.vencimento.localeCompare(a.vencimento); });
     var nota = filtrando ? '<p class="filter-empty-note">' + ordenados.length + " resultado" + (ordenados.length === 1 ? "" : "s") +
       ' · <span class="filter-clear" id="limparFiltros">limpar filtros</span></p>' : "";
-    return barra + nota + ordenados.map(function (l) {
+    var linhas = ordenados.map(function (l) {
       var cartaoNome = "";
       if (l.cartaoId) {
         var c = App.state.cartoes.filter(function (x) { return x.id === l.cartaoId; })[0];
@@ -308,18 +329,27 @@ window.App = window.App || {};
       var tag = "";
       if (l.totalParcelas > 1) tag = ' · <span class="parcela-tag">' + l.parcelaAtual + "/" + l.totalParcelas + "</span>";
       else if (l.recorrente) tag = " · " + ICONS.repeat.replace("<svg ", '<svg style="width:11px;height:11px;vertical-align:-1px" ');
+      var checked = selecionados.indexOf(l.id) !== -1;
+      var indicador = selecionando
+        ? '<span class="lanc-check' + (checked ? " checked" : "") + '">' + (checked ? ICONS.check : "") + "</span>"
+        : '<span class="lanc-dot' + dotClass + '" title="' + l.status + '"></span>';
+      var acoes = selecionando
+        ? ""
+        : '<button class="icon-btn" data-edit-lanc="' + l.id + '" aria-label="Editar">' + ICONS.edit + "</button>" +
+          '<button class="icon-btn" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "</button>";
       return (
-        '<div class="lanc-item' + rowClass + '" data-lanc="' + l.id + '">' +
-          '<span class="lanc-dot' + dotClass + '" title="' + l.status + '"></span>' +
+        '<div class="lanc-item' + rowClass + (checked ? " selected" : "") + '" data-lanc="' + l.id + '">' +
+          indicador +
           '<div class="lanc-info">' +
             '<div class="t">' + u.escapeHtml(l.titulo) + "</div>" +
             '<div class="m">' + u.fmtDate(l.vencimento) + " · " + l.categoria + cartaoNome + tag + "</div>" +
           "</div>" +
           '<div class="lanc-valor num">' + valSpan(u.fmtBRL.format(l.valor)) + "</div>" +
-          '<button class="icon-btn" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "</button>" +
+          acoes +
         "</div>"
       );
     }).join("");
+    return barra + nota + linhas + (selecionando ? renderBulkBar() : "");
   }
 
   // ---- Orquestração ----
@@ -329,7 +359,11 @@ window.App = window.App || {};
       return '<button data-tab="' + t.id + '" class="' + (tab === t.id ? "active" : "") + '">' + t.icon + "<span>" + t.label + "</span></button>";
     }).join("");
     el.querySelectorAll("button").forEach(function (btn) {
-      btn.addEventListener("click", function () { tab = btn.getAttribute("data-tab"); render(); });
+      btn.addEventListener("click", function () {
+        tab = btn.getAttribute("data-tab");
+        if (tab !== "lancamentos") { selecionando = false; selecionados = []; }
+        render();
+      });
     });
   }
 
@@ -338,7 +372,9 @@ window.App = window.App || {};
     var eyeBtn = '<button class="eye-toggle" id="eyeToggle" aria-label="Ocultar valores">' + (sec.ofuscarAtivo() ? ICONS.eyeOff : ICONS.eye) + "</button>";
     var extra = "";
     if (tab === "lancamentos") {
-      extra = '<button id="exportBtn" aria-label="Exportar CSV">' + ICONS.download + "</button>";
+      extra =
+        '<button id="exportBtn" aria-label="Exportar CSV">' + ICONS.download + "</button>" +
+        '<button id="selectModeBtn" aria-label="Selecionar lançamentos" class="' + (selecionando ? "active" : "") + '">' + ICONS.selectMode + "</button>";
     } else if (tab === "resumo") {
       extra =
         '<div class="month-nav">' +
@@ -348,6 +384,11 @@ window.App = window.App || {};
     }
     el.innerHTML = extra + eyeBtn;
     if (document.getElementById("exportBtn")) document.getElementById("exportBtn").addEventListener("click", App.backup.exportarCSV);
+    if (document.getElementById("selectModeBtn")) document.getElementById("selectModeBtn").addEventListener("click", function () {
+      selecionando = !selecionando;
+      if (!selecionando) selecionados = [];
+      render();
+    });
     if (document.getElementById("prevMonth")) document.getElementById("prevMonth").addEventListener("click", function () { mesSelecionado = u.shiftMonth(mesSelecionado, -1); render(); });
     if (document.getElementById("nextMonth")) document.getElementById("nextMonth").addEventListener("click", function () { mesSelecionado = u.shiftMonth(mesSelecionado, 1); render(); });
     document.getElementById("eyeToggle").addEventListener("click", function () { sec.toggleOfuscar(); render(); });
@@ -457,6 +498,12 @@ window.App = window.App || {};
     document.querySelectorAll("[data-lanc]").forEach(function (row) {
       row.addEventListener("click", function () {
         var id = row.getAttribute("data-lanc");
+        if (selecionando) {
+          var idx = selecionados.indexOf(id);
+          if (idx === -1) selecionados.push(id); else selecionados.splice(idx, 1);
+          render();
+          return;
+        }
         var l = App.state.lancamentos.filter(function (x) { return x.id === id; })[0];
         if (!l) return;
         var vaiPagar = l.status === "aberto";
@@ -471,6 +518,70 @@ window.App = window.App || {};
         setTimeout(render, vaiPagar ? 260 : 0);
       });
     });
+
+    document.querySelectorAll("[data-edit-lanc]").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var id = btn.getAttribute("data-edit-lanc");
+        var l = App.state.lancamentos.filter(function (x) { return x.id === id; })[0];
+        if (!l) return;
+        App.sheets.openLancamentoSheet(l);
+      });
+    });
+
+    var bulkClose = document.getElementById("bulkClose");
+    if (bulkClose) bulkClose.addEventListener("click", function () { selecionando = false; selecionados = []; render(); });
+
+    var bulkSelectAll = document.getElementById("bulkSelectAll");
+    if (bulkSelectAll) bulkSelectAll.addEventListener("click", function () {
+      var visiveis = lancamentosFiltrados().map(function (l) { return l.id; });
+      var todosSelecionados = visiveis.length > 0 && visiveis.every(function (id) { return selecionados.indexOf(id) !== -1; });
+      selecionados = todosSelecionados ? [] : visiveis.slice();
+      render();
+    });
+
+    var bulkPago = document.getElementById("bulkPago");
+    if (bulkPago) bulkPago.addEventListener("click", function () {
+      if (selecionados.length === 0) return;
+      App.state.lancamentos.forEach(function (l) { if (selecionados.indexOf(l.id) !== -1) l.status = "pago"; });
+      data.saveState();
+      selecionando = false; selecionados = [];
+      render();
+      toastSuccess("Marcados como pagos");
+    });
+
+    var bulkAberto = document.getElementById("bulkAberto");
+    if (bulkAberto) bulkAberto.addEventListener("click", function () {
+      if (selecionados.length === 0) return;
+      App.state.lancamentos.forEach(function (l) { if (selecionados.indexOf(l.id) !== -1) l.status = "aberto"; });
+      data.saveState();
+      selecionando = false; selecionados = [];
+      render();
+      toast("Marcados como em aberto");
+    });
+
+    var bulkEditar = document.getElementById("bulkEditar");
+    if (bulkEditar) bulkEditar.addEventListener("click", function () {
+      if (selecionados.length === 0) return;
+      App.sheets.openBulkEditSheet(selecionados.slice());
+    });
+
+    var bulkExcluir = document.getElementById("bulkExcluir");
+    if (bulkExcluir) bulkExcluir.addEventListener("click", function () {
+      if (selecionados.length === 0) return;
+      if (!window.confirm("Excluir " + selecionados.length + " lançamentos selecionados?")) return;
+      var ids = selecionados.slice();
+      var removidos = App.state.lancamentos.filter(function (l) { return ids.indexOf(l.id) !== -1; });
+      App.state.lancamentos = App.state.lancamentos.filter(function (l) { return ids.indexOf(l.id) === -1; });
+      data.saveState();
+      selecionando = false; selecionados = [];
+      render();
+      toastUndo(ids.length + " lançamentos excluídos", function () {
+        App.state.lancamentos = App.state.lancamentos.concat(removidos);
+        data.saveState();
+        render();
+      });
+    });
   }
 
   App.ui = {
@@ -478,6 +589,7 @@ window.App = window.App || {};
     getTab: function () { return tab; }, setTab: function (t) { tab = t; },
     getMes: function () { return mesSelecionado; }, setMes: function (m) { mesSelecionado = m; },
     render: render, bindMainEvents: bindMainEvents,
-    toast: toast, toastSuccess: toastSuccess, toastUndo: toastUndo, valSpan: valSpan
+    toast: toast, toastSuccess: toastSuccess, toastUndo: toastUndo, valSpan: valSpan,
+    exitSelecao: function () { selecionando = false; selecionados = []; }
   };
 })(window.App);

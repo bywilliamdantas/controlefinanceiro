@@ -57,38 +57,60 @@ window.App = window.App || {};
   }
 
   // ---- Lançamento ----
-  function openLancamentoSheet() {
+  // Sem `existing`: cria um lançamento novo (com opção de recorrência/parcelamento).
+  // Com `existing`: edita os campos básicos daquele lançamento específico (a
+  // recorrência/parcelamento em si não é alterada — só o item selecionado).
+  function openLancamentoSheet(existing) {
+    var editMode = !!existing;
     var root = document.getElementById("modalRoot");
-    var cartaoOptions = App.state.cartoes.map(function (c) { return '<option value="' + c.id + '">' + u.escapeHtml(c.nome) + "</option>"; }).join("");
-    var catOptions = data.categoriasTodas().map(function (c) { return '<option value="' + c + '">' + c + "</option>"; }).join("");
+    var cartaoOptions = App.state.cartoes.map(function (c) {
+      return '<option value="' + c.id + '"' + (editMode && existing.cartaoId === c.id ? " selected" : "") + '>' + u.escapeHtml(c.nome) + "</option>";
+    }).join("");
+    var catOptions = data.categoriasTodas().map(function (c) {
+      return '<option value="' + c + '"' + (editMode && existing.categoria === c ? " selected" : "") + '>' + c + "</option>";
+    }).join("");
+    var meioOptions = data.MEIOS.map(function (m) {
+      return '<option value="' + m + '"' + (editMode && existing.meioPagamento === m ? " selected" : "") + '>' + m + "</option>";
+    }).join("");
+
+    var tipoInfo = "";
+    if (editMode && existing.totalParcelas > 1) {
+      tipoInfo = '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Parcela ' + existing.parcelaAtual + "/" + existing.totalParcelas + " — editar aqui altera só esta parcela.</p>";
+    } else if (editMode && existing.recorrente) {
+      tipoInfo = '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Lançamento recorrente — editar aqui altera só este mês.</p>';
+    }
+
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop">' +
         '<div class="sheet">' +
-          '<div class="sheet-head"><h2>Novo lançamento</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
-          '<label class="field">Descrição<input id="fTitulo" type="text" placeholder="Ex: Supermercado">' +
+          '<div class="sheet-head"><h2>' + (editMode ? "Editar lançamento" : "Novo lançamento") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          tipoInfo +
+          '<label class="field">Descrição<input id="fTitulo" type="text" placeholder="Ex: Supermercado" value="' + (editMode ? u.escapeHtml(existing.titulo) : "") + '">' +
             '<span class="field-error-msg" id="errTitulo"></span></label>' +
           '<div class="row2">' +
-            '<label class="field">Valor<input id="fValor" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00">' +
+            '<label class="field">Valor<input id="fValor" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (editMode ? existing.valor : "") + '">' +
               '<span class="field-error-msg" id="errValor"></span></label>' +
-            '<label class="field">Vencimento<input id="fData" type="date" value="' + new Date().toISOString().slice(0, 10) + '">' +
+            '<label class="field">Vencimento<input id="fData" type="date" value="' + (editMode ? existing.vencimento : new Date().toISOString().slice(0, 10)) + '">' +
               '<span class="field-error-msg" id="errData"></span></label>' +
           "</div>" +
           '<label class="field">Categoria<select id="fCategoria">' + catOptions + "</select>" +
             '<button type="button" class="meta-edit-link" id="btnGerenciarCategorias" style="margin-top:6px">gerenciar categorias</button></label>' +
-          '<label class="field">Pagamento<select id="fMeio">' + data.MEIOS.map(function (m) { return '<option value="' + m + '">' + m + "</option>"; }).join("") + "</select></label>" +
+          '<label class="field">Pagamento<select id="fMeio">' + meioOptions + "</select></label>" +
           '<div id="cartaoWrap" style="display:none"><label class="field">Cartão<select id="fCartao"><option value="">Nenhum</option>' + cartaoOptions + "</select></label></div>" +
-          '<label class="field">Repetição<select id="fTipo">' +
-            '<option value="unico">Único</option>' +
-            '<option value="recorrente">Recorrente (repete todo mês)</option>' +
-            '<option value="parcelado">Parcelado</option>' +
-          "</select></label>" +
-          '<div id="recorrenteWrap" class="tipo-fields" style="display:none">' +
-            '<label class="field" style="margin-bottom:0">Repetir por quantos meses<input id="fMeses" type="number" min="2" max="60" value="12"></label>' +
-          "</div>" +
-          '<div id="parceladoWrap" class="tipo-fields" style="display:none">' +
-            '<label class="field" style="margin-bottom:0">Número de parcelas (valor acima = valor de cada parcela)<input id="fParcelas" type="number" min="2" max="60" value="2"></label>' +
-          "</div>" +
-          '<div class="btn-row"><button class="btn btn-primary" id="fSave">Salvar</button></div>' +
+          (editMode ? "" :
+            '<label class="field">Repetição<select id="fTipo">' +
+              '<option value="unico">Único</option>' +
+              '<option value="recorrente">Recorrente (repete todo mês)</option>' +
+              '<option value="parcelado">Parcelado</option>' +
+            "</select></label>" +
+            '<div id="recorrenteWrap" class="tipo-fields" style="display:none">' +
+              '<label class="field" style="margin-bottom:0">Repetir por quantos meses<input id="fMeses" type="number" min="2" max="60" value="12"></label>' +
+            "</div>" +
+            '<div id="parceladoWrap" class="tipo-fields" style="display:none">' +
+              '<label class="field" style="margin-bottom:0">Número de parcelas (valor acima = valor de cada parcela)<input id="fParcelas" type="number" min="2" max="60" value="2"></label>' +
+            "</div>"
+          ) +
+          '<div class="btn-row"><button class="btn btn-primary" id="fSave">' + (editMode ? "Salvar alterações" : "Salvar") + "</button></div>" +
         "</div>" +
       "</div>";
     bindBackdropClose(root);
@@ -100,17 +122,19 @@ window.App = window.App || {};
     syncCartaoWrap();
 
     var tipoSelect = document.getElementById("fTipo");
-    var recorrenteWrap = document.getElementById("recorrenteWrap");
-    var parceladoWrap = document.getElementById("parceladoWrap");
-    function syncTipoWrap() {
-      recorrenteWrap.style.display = tipoSelect.value === "recorrente" ? "block" : "none";
-      parceladoWrap.style.display = tipoSelect.value === "parcelado" ? "block" : "none";
+    if (tipoSelect) {
+      var recorrenteWrap = document.getElementById("recorrenteWrap");
+      var parceladoWrap = document.getElementById("parceladoWrap");
+      var syncTipoWrap = function () {
+        recorrenteWrap.style.display = tipoSelect.value === "recorrente" ? "block" : "none";
+        parceladoWrap.style.display = tipoSelect.value === "parcelado" ? "block" : "none";
+      };
+      tipoSelect.addEventListener("change", syncTipoWrap);
+      syncTipoWrap();
     }
-    tipoSelect.addEventListener("change", syncTipoWrap);
-    syncTipoWrap();
 
     document.getElementById("btnGerenciarCategorias").addEventListener("click", function () {
-      openCategoriaManageSheet(function () { closeSheet(); openLancamentoSheet(); });
+      openCategoriaManageSheet(function () { closeSheet(); openLancamentoSheet(existing); });
     });
 
     document.getElementById("fSave").addEventListener("click", function () {
@@ -128,6 +152,19 @@ window.App = window.App || {};
       var meio = meioSelect.value;
       var cartaoId = meio === "Cartão de crédito" ? (document.getElementById("fCartao").value || null) : null;
       var categoria = document.getElementById("fCategoria").value;
+
+      if (editMode) {
+        Object.assign(existing, {
+          titulo: titulo, valor: valor, categoria: categoria,
+          vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId
+        });
+        data.saveState();
+        closeSheet();
+        App.ui.render();
+        App.ui.toastSuccess("Lançamento atualizado");
+        return;
+      }
+
       var tipo = tipoSelect.value;
 
       function addLancamento(overrides) {
@@ -162,6 +199,44 @@ window.App = window.App || {};
       data.saveState();
       closeSheet();
       App.ui.render();
+    });
+  }
+
+  // ---- Edição em massa de lançamentos ----
+  function openBulkEditSheet(ids) {
+    var root = document.getElementById("modalRoot");
+    var catOptions = '<option value="">Não alterar</option>' + data.categoriasTodas().map(function (c) {
+      return '<option value="' + c + '">' + c + "</option>";
+    }).join("");
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop">' +
+        '<div class="sheet">' +
+          '<div class="sheet-head"><h2>Editar ' + ids.length + (ids.length === 1 ? " lançamento" : " lançamentos") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          '<label class="field">Categoria<select id="fBulkCategoria">' + catOptions + "</select></label>" +
+          '<label class="field">Status<select id="fBulkStatus">' +
+            '<option value="">Não alterar</option>' +
+            '<option value="aberto">Em aberto</option>' +
+            '<option value="pago">Pago</option>' +
+          "</select></label>" +
+          '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 10px">Só os campos escolhidos serão alterados nos lançamentos selecionados.</p>' +
+          '<div class="btn-row"><button class="btn btn-primary" id="fSaveBulk">Aplicar</button></div>' +
+        "</div>" +
+      "</div>";
+    bindBackdropClose(root);
+    document.getElementById("fSaveBulk").addEventListener("click", function () {
+      var cat = document.getElementById("fBulkCategoria").value;
+      var status = document.getElementById("fBulkStatus").value;
+      if (!cat && !status) { App.ui.toast("Escolha ao menos um campo para alterar"); return; }
+      App.state.lancamentos.forEach(function (l) {
+        if (ids.indexOf(l.id) === -1) return;
+        if (cat) l.categoria = cat;
+        if (status) l.status = status;
+      });
+      data.saveState();
+      closeSheet();
+      App.ui.exitSelecao();
+      App.ui.render();
+      App.ui.toastSuccess("Lançamentos atualizados");
     });
   }
 
@@ -320,6 +395,7 @@ window.App = window.App || {};
     openCartaoSheet: openCartaoSheet, openLancamentoSheet: openLancamentoSheet,
     openCategoriaManageSheet: openCategoriaManageSheet, openMetaSheet: openMetaSheet,
     openReceitaExtraSheet: openReceitaExtraSheet, openPinConfigSheet: openPinConfigSheet,
+    openBulkEditSheet: openBulkEditSheet,
     closeSheet: closeSheet
   };
 })(window.App);

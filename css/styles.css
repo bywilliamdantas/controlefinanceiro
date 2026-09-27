@@ -73,8 +73,8 @@ body {
 @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
 
 header.topbar {
-  padding: 14px 20px 12px; padding-top: calc(14px + env(safe-area-inset-top, 0px));
-  display: flex; align-items: baseline; justify-content: space-between; flex-shrink: 0;
+  padding: 14px 20px 12px;
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
 }
 header.topbar h1 { font-size: 20px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
 header.topbar .month-label { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
@@ -126,13 +126,32 @@ label.field { display: block; font-size: 13px; color: var(--ink-soft); margin-bo
 
 .lanc-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
 .lanc-item:last-child { border-bottom: none; }
+.lanc-item.selected { background: var(--teal-soft); }
 .lanc-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--teal); transition: transform .2s ease; }
 .lanc-dot.aberto { background: var(--amber); }
 .lanc-item.just-paid .lanc-dot { transform: scale(1.5); }
+.lanc-check {
+  width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--border); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: #fff; transition: background .15s ease, border-color .15s ease;
+}
+.lanc-check svg { width: 12px; height: 12px; stroke-width: 3; }
+.lanc-check.checked { background: var(--teal); border-color: var(--teal); }
 .lanc-info { flex: 1; min-width: 0; }
 .lanc-info .t { font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lanc-info .m { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
 .lanc-valor { font-size: 15px; white-space: nowrap; }
+
+/* ==== Seleção em massa (Lançamentos) ==== */
+.bulk-bar {
+  position: sticky; bottom: 0; margin: 10px 0 0; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  box-shadow: 0 -6px 18px var(--shadow);
+}
+.bulk-count { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.bulk-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.btn-bulk { font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 10px; border-radius: 9px; border: none; background: var(--surface-2); color: var(--ink); cursor: pointer; }
+.btn-bulk.danger { background: var(--red-soft); color: var(--red); }
+.btn-bulk:disabled { opacity: .4; cursor: default; }
 
 /* ==== Empty states ilustrados ==== */
 .empty-illustrated { text-align: center; padding: 48px 20px 30px; color: var(--ink-soft); }
@@ -189,6 +208,7 @@ nav.tabbar svg { width: 21px; height: 21px; }
 
 .top-actions { display: flex; gap: 10px; }
 .top-actions button { background: var(--surface-2); border: none; color: var(--ink); border-radius: 9px; padding: 7px; display: flex; cursor: pointer; }
+.top-actions button.active { background: var(--teal); color: var(--surface); }
 
 /* ==== Toasts ==== */
 .toast {
