@@ -48,6 +48,7 @@ window.App = window.App || {};
             '<label class="field">Dia de vencimento (opcional)<input id="fDiaVenc" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 10" value="' + (editMode && existing.diaVencimento ? existing.diaVencimento : "") + '">' +
               '<span class="field-error-msg" id="errDiaVenc"></span></label>' +
           "</div>" +
+          '<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="fBeneficio" type="checkbox"' + (editMode && existing.beneficio ? " checked" : "") + ' style="width:auto"> Cartão de benefício (não desconta da renda)</label>' +
           '<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 12px">Com fechamento e vencimento definidos, o app calcula sozinho em qual fatura cada compra cai — como no cartão de verdade.</p>' +
           '<div class="btn-row"><button class="btn btn-primary" id="fSave">Salvar</button></div>' +
         "</div>" +
@@ -60,6 +61,7 @@ window.App = window.App || {};
       var cor = document.getElementById("fCor").value;
       var diaVencRaw = document.getElementById("fDiaVenc").value;
       var diaFechRaw = document.getElementById("fDiaFech").value;
+      var beneficio = document.getElementById("fBeneficio").checked;
       var ok = true;
       if (!nome) { setFieldError("fNome", "errNome", "Dê um nome ao cartão"); ok = false; }
       var limiteNum = parseFloat(limite);
@@ -77,7 +79,7 @@ window.App = window.App || {};
       if (!ok) return;
 
       if (editMode) {
-        Object.assign(existing, { nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor });
+        Object.assign(existing, { nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor, beneficio: beneficio });
         data.saveState();
         closeSheet();
         App.ui.render();
@@ -85,7 +87,7 @@ window.App = window.App || {};
         return;
       }
 
-      App.state.cartoes.push({ id: u.uid(), nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor });
+      App.state.cartoes.push({ id: u.uid(), nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor, beneficio: beneficio });
       data.saveState();
       closeSheet();
       App.ui.render();
@@ -357,6 +359,14 @@ window.App = window.App || {};
       data.saveState();
       closeSheet();
       App.ui.render();
+      // Depois de cada novo lançamento, informa quanto ainda dá pra gastar.
+      var infos = [];
+      if (cartaoId) {
+        var cart = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
+        if (cart) infos.push("Restante no " + cart.nome + ": " + u.fmtBRL.format(cart.limite - data.usadoCartao(cartaoId)));
+      }
+      if (!data.ehBeneficio(cartaoId)) infos.push("Ainda pode gastar no mês: " + u.fmtBRL.format(data.saldoDoMes(vencimento.slice(0, 7))));
+      if (infos.length) setTimeout(function () { App.ui.toast(infos.join(" · ")); }, 1400);
     });
   }
 

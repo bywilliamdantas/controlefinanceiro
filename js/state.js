@@ -160,8 +160,15 @@ window.App = window.App || {};
   function lancamentosDoMes(mes) {
     return App.state.lancamentos.filter(function (l) { return l.vencimento.slice(0, 7) === mes; });
   }
+  // Cartões marcados como "benefício" (ex: iFood Benefícios) têm limite
+  // próprio e NÃO descontam da renda: ficam fora das despesas e do saldo.
+  function ehBeneficio(cartaoId) {
+    if (!cartaoId) return false;
+    var c = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
+    return !!(c && c.beneficio);
+  }
   function despesasDoMes(mes) {
-    return lancamentosDoMes(mes).reduce(function (s, l) { return s + l.valor; }, 0);
+    return lancamentosDoMes(mes).reduce(function (s, l) { return ehBeneficio(l.cartaoId) ? s : s + l.valor; }, 0);
   }
   function receitasExtrasDoMes(mes) {
     return App.state.receitasExtras
@@ -199,12 +206,28 @@ window.App = window.App || {};
   // parcelas em aberto de qualquer mês, porque a compra inteira já consumiu o
   // limite no ato da compra, liberando conforme cada parcela é paga.
   function usadoCartaoDetalhado(cartaoId) {
-    var mesAtual = u.todayISO().slice(0, 7);
+    var hoje = u.todayISO();
+    var proximo = proximoVencimentoCartao(cartaoId);
+    // Recorrentes: consomem limite a partir da fatura em aberto, e não
+    // só quando o mês vira. Conta toda parcela em aberto com vencimento até
+    // o próximo vencimento do cartão (ou já vencida e não paga). Sem dia de
+    // vencimento no cartão, conta a primeira ocorrência em aberto de cada
+    // recorrente. Ao pagar, essa ocorrência sai da conta e o limite volta;
+    // as dos meses seguintes só entram quando a próxima fatura chega.
+    var primeiraAberta = {};
+    App.state.lancamentos.forEach(function (l) {
+      if (l.cartaoId !== cartaoId || l.status !== "aberto" || !l.recorrente) return;
+      var k = l.grupoId || l.id;
+      if (!primeiraAberta[k] || l.vencimento < primeiraAberta[k]) primeiraAberta[k] = l.vencimento;
+    });
     var recorrente = 0, parcelado = 0;
     App.state.lancamentos.forEach(function (l) {
       if (l.cartaoId !== cartaoId || l.status !== "aberto") return;
       if (l.recorrente) {
-        if (l.vencimento.slice(0, 7) <= mesAtual) recorrente += l.valor;
+        var k = l.grupoId || l.id;
+        var corte = proximo || primeiraAberta[k];
+        if (corte < hoje) corte = hoje;
+        if (l.vencimento <= corte) recorrente += l.valor;
       } else {
         parcelado += l.valor;
       }
@@ -399,6 +422,7 @@ window.App = window.App || {};
     corCartao: corCartao,
     lancamentosDoMes: lancamentosDoMes,
     despesasDoMes: despesasDoMes,
+    ehBeneficio: ehBeneficio,
     receitasExtrasDoMes: receitasExtrasDoMes,
     salarioDoMes: salarioDoMes,
     definirSalarioDoMes: definirSalarioDoMes,
