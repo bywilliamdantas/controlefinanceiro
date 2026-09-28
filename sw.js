@@ -1,7 +1,7 @@
 // Service worker simples: cacheia o "app shell" no install e serve
 // tudo (cache-first, com fallback pra rede) depois disso, permitindo
 // abrir o app offline após a primeira visita.
-var CACHE_NAME = "financeiro-v13";
+var CACHE_NAME = "financeiro-v14";
 var APP_SHELL = [
   "./",
   "./index.html",
@@ -12,6 +12,7 @@ var APP_SHELL = [
   "./js/state.js",
   "./js/charts.js",
   "./js/security.js",
+  "./js/notifications.js",
   "./js/backup.js",
   "./js/render.js",
   "./js/sheets.js",
@@ -36,6 +37,34 @@ self.addEventListener("activate", function (event) {
       );
     }).then(function () { return self.clients.claim(); })
   );
+});
+
+// Clique numa notificação: foca a janela do app já aberta, ou abre uma nova.
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window" }).then(function (clientList) {
+      for (var i = 0; i < clientList.length; i++) {
+        if ("focus" in clientList[i]) return clientList[i].focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./index.html");
+    })
+  );
+});
+
+// Periodic Background Sync: onde o navegador suportar (poucos suportam hoje),
+// permite checar lembretes mesmo com o app fechado. Sem servidor de push,
+// isso é o melhor que dá pra fazer nativamente num app estático.
+self.addEventListener("periodicsync", function (event) {
+  if (event.tag === "checar-lembretes") {
+    event.waitUntil(
+      self.registration.showNotification("Controle Financeiro", {
+        body: "Abra o app para ver suas contas a vencer.",
+        icon: "assets/icon.png",
+        tag: "lembretes-financeiro"
+      })
+    );
+  }
 });
 
 self.addEventListener("fetch", function (event) {

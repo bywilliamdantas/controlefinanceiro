@@ -72,6 +72,7 @@ window.App = window.App || {};
           receitasExtras: dados.receitasExtras || [],
           categoriasCustom: dados.categoriasCustom || [],
           metas: dados.metas || {},
+          metasCategoria: dados.metasCategoria || {},
           pinHash: dados.pinHash || null,
           prefs: Object.assign(base.prefs, dados.prefs || {})
         });
@@ -113,11 +114,81 @@ window.App = window.App || {};
     }, 300);
   }
 
+  // ---- Relatório mensal (para exportar/imprimir como PDF) ----
+  // Sem biblioteca de PDF, a forma mais confiável e 100% offline de gerar um
+  // PDF é montar uma página HTML bem formatada e abrir o diálogo de
+  // impressão do navegador — "Salvar como PDF" é uma opção nativa em
+  // praticamente todo navegador/celular.
+  function gerarRelatorioMensal(mes) {
+    var data = App.data;
+    var despesas = data.despesasDoMes(mes);
+    var renda = data.rendaTotalDoMes(mes);
+    var saldo = renda - despesas;
+    var categorias = data.gastosPorCategoria(mes);
+    var lancamentos = data.lancamentosDoMes(mes).slice().sort(function (a, b) { return a.vencimento.localeCompare(b.vencimento); });
+    var metasCat = data.metasCategoriaStatus(mes);
+    var mesLabel = u.capitalize(u.fmtMonth(mes));
+
+    var linhasCategorias = categorias.map(function (c) {
+      var pct = despesas > 0 ? ((c.valor / despesas) * 100).toFixed(0) : 0;
+      return "<tr><td><span class=\"dot\" style=\"background:" + c.cor + "\"></span>" + c.categoria + "</td><td class=\"num\">" +
+        u.fmtBRL.format(c.valor) + "</td><td class=\"num\">" + pct + "%</td></tr>";
+    }).join("") || "<tr><td colspan=\"3\" class=\"vazio\">Sem gastos neste mês.</td></tr>";
+
+    var linhasMetas = metasCat.map(function (m) {
+      return "<tr><td>" + m.categoria + "</td><td class=\"num\">" + u.fmtBRL.format(m.gasto) + " / " + u.fmtBRL.format(m.alvo) +
+        "</td><td class=\"num\">" + m.pct.toFixed(0) + "%</td></tr>";
+    }).join("");
+
+    var linhasLancamentos = lancamentos.map(function (l) {
+      return "<tr><td>" + u.fmtDate(l.vencimento) + "</td><td>" + u.escapeHtml(l.titulo) + "</td><td>" + l.categoria +
+        "</td><td>" + (l.status === "pago" ? "Pago" : "Em aberto") + "</td><td class=\"num\">" + u.fmtBRL.format(l.valor) + "</td></tr>";
+    }).join("") || "<tr><td colspan=\"5\" class=\"vazio\">Nenhum lançamento neste mês.</td></tr>";
+
+    var html =
+      "<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"UTF-8\"><title>Relatório · " + mesLabel + "</title><style>" +
+      "body{font-family:Arial,Helvetica,sans-serif;color:#16211C;margin:32px;}" +
+      "h1{font-size:20px;margin:0 0 2px}h2{font-size:14px;color:#57645C;font-weight:normal;margin:0 0 22px}" +
+      ".cards{display:flex;gap:14px;margin-bottom:26px}.card{flex:1;border:1px solid #D9DCD4;border-radius:10px;padding:12px 14px}" +
+      ".card .label{font-size:11px;color:#57645C;margin-bottom:4px}.card .val{font-size:19px;font-weight:bold}" +
+      ".pos{color:#0E6B5C}.neg{color:#A83B32}" +
+      "table{width:100%;border-collapse:collapse;margin-bottom:26px;font-size:12.5px}" +
+      "th{text-align:left;font-size:11px;color:#57645C;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #D9DCD4;padding:6px 8px}" +
+      "td{padding:7px 8px;border-bottom:1px solid #EEF0EC}.num{text-align:right;font-variant-numeric:tabular-nums}" +
+      ".dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}" +
+      ".vazio{text-align:center;color:#97A399;padding:16px}" +
+      "h3{font-size:13px;margin:0 0 8px}" +
+      "footer{font-size:10.5px;color:#97A399;margin-top:30px;text-align:center}" +
+      "@media print{body{margin:12mm}}" +
+      "</style></head><body>" +
+      "<h1>Controle Financeiro</h1><h2>Relatório de " + mesLabel + "</h2>" +
+      "<div class=\"cards\">" +
+        "<div class=\"card\"><div class=\"label\">Renda total</div><div class=\"val\">" + u.fmtBRL.format(renda) + "</div></div>" +
+        "<div class=\"card\"><div class=\"label\">Despesas</div><div class=\"val\">" + u.fmtBRL.format(despesas) + "</div></div>" +
+        "<div class=\"card\"><div class=\"label\">Saldo</div><div class=\"val " + (saldo >= 0 ? "pos" : "neg") + "\">" + u.fmtBRL.format(saldo) + "</div></div>" +
+      "</div>" +
+      "<h3>Gastos por categoria</h3>" +
+      "<table><thead><tr><th>Categoria</th><th class=\"num\">Valor</th><th class=\"num\">%</th></tr></thead><tbody>" + linhasCategorias + "</tbody></table>" +
+      (linhasMetas ? "<h3>Metas por categoria</h3><table><thead><tr><th>Categoria</th><th class=\"num\">Gasto / meta</th><th class=\"num\">%</th></tr></thead><tbody>" + linhasMetas + "</tbody></table>" : "") +
+      "<h3>Lançamentos do mês</h3>" +
+      "<table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Status</th><th class=\"num\">Valor</th></tr></thead><tbody>" + linhasLancamentos + "</tbody></table>" +
+      "<footer>Gerado em " + u.fmtDate(u.todayISO()) + " pelo Controle Financeiro</footer>" +
+      "<script>window.onload=function(){setTimeout(function(){window.print();},300);};<" + "/script>" +
+      "</body></html>";
+
+    var win = window.open("", "_blank");
+    if (!win) { App.ui.toast("Permita pop-ups para gerar o relatório"); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+
   App.backup = {
     exportarCSV: exportarCSV,
     exportarBackup: exportarBackup,
     importarBackup: importarBackup,
     baixarArquivo: baixarArquivo,
-    forcarSincronizacao: forcarSincronizacao
+    forcarSincronizacao: forcarSincronizacao,
+    gerarRelatorioMensal: gerarRelatorioMensal
   };
 })(window.App);

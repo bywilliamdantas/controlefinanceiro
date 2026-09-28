@@ -304,3 +304,71 @@ nav.tabbar svg { width: 21px; height: 21px; }
   .pin-pad { grid-template-columns: repeat(3, 56px); }
   .pin-pad button { width: 56px; height: 56px; }
 }
+
+/* ==== Meta com anel de progresso ==== */
+.meta-ring-row { display: flex; align-items: center; gap: 16px; }
+.ring-chart-label { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600; fill: var(--ink); }
+.meta-ring-info { flex: 1; min-width: 0; }
+.meta-restante { font-size: 13px; color: var(--ink-soft); margin: 0; }
+
+/* ==== Metas por categoria ==== */
+.cat-meta-bar-row { margin-bottom: 12px; }
+.cat-meta-bar-row:last-child { margin-bottom: 0; }
+.cat-meta-bar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 13px; }
+.cat-meta-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-meta-pct { font-size: 12.5px; }
+.cat-meta-list { margin-bottom: 10px; }
+.cat-meta-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.cat-meta-row:last-child { border-bottom: none; }
+.cat-meta-nome { font-size: 13.5px; }
+.cat-meta-valores { font-size: 12.5px; color: var(--ink-soft); margin-left: auto; margin-right: 4px; white-space: nowrap; }
+
+/* ==== Gráfico de barras por categoria (coluna) ==== */
+.chart-wrap-column { flex-direction: column; align-items: stretch; gap: 10px; }
+.chart-legend-row-wrap { flex-direction: row; flex-wrap: wrap; gap: 4px 14px; }
+.chart-legend-row-wrap .chart-legend-row { gap: 6px; }
+
+/* ==== Cartões: fechamento / dica de melhor dia ==== */
+.cartao-dica { font-size: 11.5px; color: var(--ink-soft); margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--border); line-height: 1.5; }
+
+/* ==== Dicas em campos de formulário ==== */
+.fatura-hint, .cat-suggest-hint { display: block; font-size: 12px; color: var(--teal); margin-top: 5px; }
+
+/* ==== Comprovante ==== */
+.comprovante-box { margin-top: 4px; }
+.comprovante-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); display: block; margin-bottom: 8px; }
+.comprovante-full { width: 100%; border-radius: 12px; display: block; }
+.sheet-comprovante { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+.comprovante-tag { color: var(--teal) !important; }
+.comprovante-tag svg { width: 15px; height: 15px; }
+
+/* ==== Agrupamento por dia (Lançamentos) ==== */
+.dia-header { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin: 18px 0 4px; padding: 0 2px; }
+.dia-header:first-child { margin-top: 0; }
+
+/* ==== Swipe pra editar/excluir (toque) ==== */
+.lanc-swipe { position: relative; overflow: hidden; }
+.lanc-swipe .lanc-item { position: relative; background: var(--bg); touch-action: pan-y; }
+.lanc-swipe-actions {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 148px; display: none;
+  border-bottom: 1px solid var(--border);
+}
+.swipe-action {
+  flex: 1; border: none; height: 100%; color: #fff; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px; font-size: 11px; cursor: pointer;
+}
+.swipe-action svg { width: 18px; height: 18px; }
+.swipe-action.edit { background: var(--teal); }
+.swipe-action.delete { background: var(--red); }
+.lanc-actions-fixed { display: flex; align-items: center; }
+@media (pointer: coarse) {
+  .lanc-swipe-actions { display: flex; }
+  .lanc-actions-fixed { display: none; }
+}
+
+/* ==== Perfis ==== */
+.perfil-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); gap: 8px; }
+.perfil-row:last-child { border-bottom: none; }
+.perfil-row.ativo .perfil-nome { font-weight: 600; }
+.perfil-nome { display: flex; align-items: center; font-size: 14px; gap: 6px; flex-wrap: wrap; }
+.perfil-row > div { display: flex; align-items: center; gap: 2px; }

@@ -10,6 +10,7 @@
       else if (tab === "lancamentos") App.sheets.openLancamentoSheet();
     });
     App.ui.render();
+    if (App.state.prefs.notificacoesPush) App.notifications.checarLembretes(false);
   }
 
   function hideSplash() {

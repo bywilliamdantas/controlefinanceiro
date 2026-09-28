@@ -17,6 +17,7 @@ window.App = window.App || {};
   var filtros = { texto: "", categoria: "", cartaoId: "" };
   var selecionando = false;      // modo de seleção em massa (aba Lançamentos)
   var selecionados = [];         // ids dos lançamentos selecionados
+  var swipeSuppressClick = false; // evita disparar o toggle de pago ao fechar um swipe com toque
 
   // ---- Toasts ----
   var toastTimer = null;
@@ -62,12 +63,82 @@ window.App = window.App || {};
   function excluirComUndo(arrayRef, idx, item, msg, afterRestore) {
     arrayRef.splice(idx, 1);
     data.saveState();
+    u.vibrar(20);
     render();
     toastUndo(msg, function () {
       arrayRef.splice(idx, 0, item);
       data.saveState();
       if (afterRestore) afterRestore();
       render();
+    });
+  }
+
+  // ---- Swipe pra revelar editar/excluir (aba Lançamentos, toque) ----
+  // Arrastar o item pra esquerda revela um painel de ações atrás dele, como
+  // em apps de finanças no celular. Um toque simples (sem arrastar) continua
+  // funcionando normalmente pra marcar como pago; se o item já estiver
+  // aberto (swiped) e o usuário tocar nele, o toque só fecha o painel.
+  function bindSwipeLancamentos() {
+    var ACTIONS_WIDTH = 148;
+    var openWrap = null;
+    function fechar(wrap) {
+      if (!wrap) return;
+      var item = wrap.querySelector(".lanc-item");
+      item.style.transform = "translateX(0)";
+      wrap.classList.remove("swiped");
+      if (openWrap === wrap) openWrap = null;
+    }
+    document.querySelectorAll(".lanc-swipe").forEach(function (wrap) {
+      var item = wrap.querySelector(".lanc-item");
+      var startX = 0, startY = 0, baseX = 0, dragging = false, moved = false;
+      item.addEventListener("pointerdown", function (e) {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        dragging = true; moved = false;
+        startX = e.clientX; startY = e.clientY;
+        baseX = wrap.classList.contains("swiped") ? -ACTIONS_WIDTH : 0;
+        item.style.transition = "none";
+      });
+      item.addEventListener("pointermove", function (e) {
+        if (!dragging) return;
+        var dx = e.clientX - startX, dy = e.clientY - startY;
+        if (!moved && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (!moved && Math.abs(dy) > Math.abs(dx)) { dragging = false; return; } // é scroll vertical
+        moved = true;
+        var next = Math.min(0, Math.max(-ACTIONS_WIDTH, baseX + dx));
+        item.style.transform = "translateX(" + next + "px)";
+      });
+      function terminar(e) {
+        if (!dragging) return;
+        dragging = false;
+        item.style.transition = "";
+        if (!moved) {
+          if (wrap.classList.contains("swiped")) {
+            fechar(wrap);
+            swipeSuppressClick = true;
+            setTimeout(function () { swipeSuppressClick = false; }, 400);
+          }
+          return;
+        }
+        var dx = e.clientX - startX;
+        var finalX = Math.min(0, Math.max(-ACTIONS_WIDTH, baseX + dx));
+        if (finalX < -ACTIONS_WIDTH / 2) {
+          if (openWrap && openWrap !== wrap) fechar(openWrap);
+          item.style.transform = "translateX(-" + ACTIONS_WIDTH + "px)";
+          wrap.classList.add("swiped");
+          openWrap = wrap;
+          u.vibrar(10);
+        } else {
+          fechar(wrap);
+        }
+        swipeSuppressClick = true;
+        // Salvaguarda: em alguns navegadores o "click" sintético não chega a
+        // disparar depois de um arraste, então o flag nunca seria resetado
+        // pelo listener de clique — sem isso, a próxima linha tocada
+        // ignoraria seu primeiro toque indevidamente.
+        setTimeout(function () { swipeSuppressClick = false; }, 400);
+      }
+      item.addEventListener("pointerup", terminar);
+      item.addEventListener("pointercancel", terminar);
     });
   }
 
@@ -158,11 +229,50 @@ window.App = window.App || {};
           '<p class="card-label" style="margin:0">' + ICONS.target.replace("<svg ", '<svg style="width:13px;height:13px;vertical-align:-2px;margin-right:4px" ') + "Meta de economia</p>" +
           '<button class="meta-edit-link" id="btnDefinirMeta">editar</button>' +
         "</div>" +
-        '<p class="big-number num ' + (estourou ? "saldo-neg" : "saldo-pos") + '" style="font-size:26px">' +
-          valSpan(estourou ? "Estourou em " + u.fmtBRL.format(Math.abs(m.restante)) : u.fmtBRL.format(m.restante) + " restantes") +
-        "</p>" +
-        '<div class="bar-track" style="margin-top:8px"><div class="bar-fill' + (m.pct > 90 ? " high" : "") + '" style="width:' + m.pct.toFixed(1) + '%"></div></div>' +
-        '<p class="meta-row meta-restante" style="margin-top:8px">' + valSpan(u.fmtBRL.format(m.gasto)) + " de " + valSpan(u.fmtBRL.format(m.alvo)) + "</p>" +
+        '<div class="meta-ring-row">' +
+          charts.ringChart(m.pct, estourou ? "var(--red)" : "var(--teal)", 68) +
+          '<div class="meta-ring-info">' +
+            '<p class="big-number num ' + (estourou ? "saldo-neg" : "saldo-pos") + '" style="font-size:22px;margin:0">' +
+              valSpan(estourou ? "Estourou em " + u.fmtBRL.format(Math.abs(m.restante)) : u.fmtBRL.format(m.restante) + " restantes") +
+            "</p>" +
+            '<p class="meta-restante" style="margin-top:4px">' + valSpan(u.fmtBRL.format(m.gasto)) + " de " + valSpan(u.fmtBRL.format(m.alvo)) + "</p>" +
+          "</div>" +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderMetasCategoriaCard() {
+    var status = data.metasCategoriaStatus(mesSelecionado);
+    return (
+      '<div class="card">' +
+        '<div class="meta-row">' +
+          '<p class="card-label" style="margin:0">Metas por categoria</p>' +
+          '<button class="meta-edit-link" id="btnMetasCategoria">' + (status.length ? "gerenciar" : "definir") + "</button>" +
+        "</div>" +
+        (status.length === 0
+          ? '<p style="font-size:13px;color:var(--ink-soft);margin:0">Ex: no máximo ' + u.fmtBRL.format(400) + " em Lazer neste mês."
+          : status.map(function (m) {
+              var estourou = m.restante < 0;
+              return '<div class="cat-meta-bar-row">' +
+                '<div class="cat-meta-bar-head"><span class="chart-legend-dot" style="background:' + m.cor + '"></span>' +
+                  '<span class="cat-meta-nome">' + m.categoria + "</span>" +
+                  '<span class="num cat-meta-pct' + (estourou ? " saldo-neg" : "") + '">' + valSpan(u.fmtBRL.format(m.gasto)) + " / " + valSpan(u.fmtBRL.format(m.alvo)) + "</span>" +
+                "</div>" +
+                '<div class="bar-track"><div class="bar-fill' + (estourou ? " high" : "") + '" style="width:' + Math.min(100, m.pct).toFixed(1) + '%;background:' + (estourou ? "var(--red)" : m.cor) + '"></div></div>' +
+              "</div>";
+            }).join("")
+        ) +
+      "</div>"
+    );
+  }
+
+  function renderGraficoBarrasCard() {
+    var dados = data.gastosPorCategoriaUltimosMeses(mesSelecionado, 6);
+    return (
+      '<div class="card">' +
+        '<p class="card-label">Gastos por categoria — 6 meses</p>' +
+        charts.barChartCategoria(dados) +
       "</div>"
     );
   }
@@ -200,20 +310,41 @@ window.App = window.App || {};
       "</div>" +
       renderComparativoCard() +
       renderMetaCard() +
+      renderMetasCategoriaCard() +
       renderGraficoCategoriaCard() +
-      renderGraficoEvolucaoCard()
+      renderGraficoEvolucaoCard() +
+      renderGraficoBarrasCard()
     );
   }
 
   // ---- Ajustes ----
   function renderAjustes() {
+    var notif = App.notifications;
+    var notifAtivo = App.state.prefs.notificacoesPush && notif.permissaoConcedida();
     return (
+      '<div class="card">' +
+        '<div class="meta-row"><p class="card-label" style="margin:0">Perfil</p>' +
+          '<button class="meta-edit-link" id="btnPerfis">gerenciar</button></div>' +
+        '<p style="font-size:14px;font-weight:600">' + ICONS.user.replace("<svg ", '<svg style="width:15px;height:15px;vertical-align:-3px;margin-right:6px" ') + u.escapeHtml(data.perfilAtual()) + "</p>" +
+      "</div>" +
       '<div class="card">' +
         '<p class="card-label">Renda fixa em ' + u.fmtMonth(mesSelecionado) + '</p>' +
         '<input id="salarioInput" type="number" inputmode="decimal" step="0.01" min="0" value="' + (data.salarioDoMes(mesSelecionado) || "") + '" placeholder="0,00">' +
         '<p style="font-size:12px;color:var(--ink-soft);margin:8px 0 0">Vale a partir de ' + u.fmtMonth(mesSelecionado) + '; meses anteriores não mudam.</p>' +
       "</div>" +
       renderReceitasExtrasCard() +
+      '<div class="card">' +
+        '<p class="card-label">Relatório mensal</p>' +
+        '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Gera um resumo de ' + u.fmtMonth(mesSelecionado) + ' pronto para imprimir ou salvar como PDF.</p>' +
+        '<div class="btn-row"><button class="btn btn-ghost" id="btnRelatorioPDF">' + ICONS.printer.replace("<svg ", '<svg style="width:16px;height:16px;vertical-align:-3px;margin-right:6px" ') + "Gerar relatório de " + u.fmtMonth(mesSelecionado) + "</button></div>" +
+      "</div>" +
+      '<div class="card">' +
+        '<p class="card-label">Notificações</p>' +
+        '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Avisa quando uma conta estiver vencendo ou já vencida, enquanto o app estiver instalado. Funciona melhor com o app aberto ou em segundo plano recente — nem todo aparelho entrega notificação com o app totalmente fechado.</p>' +
+        '<div class="btn-row"><button class="btn btn-ghost" id="btnToggleNotif">' +
+          (notifAtivo ? ICONS.bellRing.replace("<svg ", '<svg style="width:16px;height:16px;vertical-align:-3px;margin-right:6px" ') + "Desativar notificações" : ICONS.bell.replace("<svg ", '<svg style="width:16px;height:16px;vertical-align:-3px;margin-right:6px" ') + "Ativar notificações") +
+        "</button></div>" +
+      "</div>" +
       '<div class="card">' +
         '<p class="card-label">Backup dos dados</p>' +
         '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Seus dados ficam salvos só neste navegador. Exporte um backup de vez em quando para não perdê-los.</p>' +
@@ -247,13 +378,22 @@ window.App = window.App || {};
       var usado = det.total;
       var restante = c.limite - usado;
       var pct = c.limite > 0 ? Math.min(100, (usado / c.limite) * 100) : 0;
+      var cor = data.corCartao(c.id);
       var partes = [];
       if (det.recorrente > 0) partes.push(u.fmtBRL.format(det.recorrente) + " recorrentes em aberto");
       if (det.parcelado > 0) partes.push(u.fmtBRL.format(det.parcelado) + " em parcelas abertas");
       var detalhe = partes.length ? '<p class="cartao-detalhe">' + valSpan(partes.join(" · ")) + "</p>" : "";
+      var tags = "";
+      if (c.diaFechamento) tags += ' <span class="cartao-venc-tag">fecha dia ' + c.diaFechamento + "</span>";
+      if (c.diaVencimento) tags += ' <span class="cartao-venc-tag">vence dia ' + c.diaVencimento + "</span>";
+      var melhorDia = data.melhorDiaCompra(c);
+      var dicaCompra = melhorDia
+        ? '<p class="cartao-dica">Compre até ' + u.fmtDate(melhorDia.fechamento) + " pra cair na fatura de " + u.fmtMonth(melhorDia.vencAtual.slice(0, 7)) +
+          "; depois disso, só na de " + u.fmtMonth(melhorDia.vencProximo.slice(0, 7)) + ".</p>"
+        : "";
       return (
-        '<div class="card cartao-item" data-cartao="' + c.id + '">' +
-          '<div class="head"><h3>' + u.escapeHtml(c.nome) + (c.diaVencimento ? ' <span class="cartao-venc-tag">vence dia ' + c.diaVencimento + "</span>" : "") + '</h3>' +
+        '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' +
+          '<div class="head"><h3>' + u.escapeHtml(c.nome) + tags + '</h3>' +
             '<div>' +
               '<button class="icon-btn" data-edit-cartao="' + c.id + '" aria-label="Editar cartão">' + ICONS.edit + "</button>" +
               '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir cartão">' + ICONS.trash + "</button>" +
@@ -265,7 +405,8 @@ window.App = window.App || {};
             "<span>Restante" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(restante)) + "</b></span>" +
           "</div>" +
           detalhe +
-          '<div class="bar-track"><div class="bar-fill' + (pct > 80 ? " high" : "") + '" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+          '<div class="bar-track"><div class="bar-fill' + (pct > 80 ? " high" : "") + '" style="width:' + pct.toFixed(1) + '%;background:' + (pct > 80 ? "var(--red)" : cor) + '"></div></div>' +
+          dicaCompra +
         "</div>"
       );
     }).join("");
@@ -331,7 +472,13 @@ window.App = window.App || {};
     var ordenados = lista.slice().sort(function (a, b) { return b.vencimento.localeCompare(a.vencimento); });
     var nota = filtrando ? '<p class="filter-empty-note">' + ordenados.length + " resultado" + (ordenados.length === 1 ? "" : "s") +
       ' · <span class="filter-clear" id="limparFiltros">limpar filtros</span></p>' : "";
-    var linhas = ordenados.map(function (l) {
+    var lastDia = null;
+    var partes = [];
+    ordenados.forEach(function (l) {
+      if (l.vencimento !== lastDia) {
+        lastDia = l.vencimento;
+        partes.push('<div class="dia-header">' + u.capitalize(u.fmtDiaRelativo(l.vencimento)) + "</div>");
+      }
       var cartaoNome = "";
       if (l.cartaoId) {
         var c = App.state.cartoes.filter(function (x) { return x.id === l.cartaoId; })[0];
@@ -345,15 +492,19 @@ window.App = window.App || {};
       var tag = "";
       if (l.totalParcelas > 1) tag = ' · <span class="parcela-tag">' + l.parcelaAtual + "/" + l.totalParcelas + "</span>";
       else if (l.recorrente) tag = " · " + ICONS.repeat.replace("<svg ", '<svg style="width:11px;height:11px;vertical-align:-1px" ');
+      var comprovanteTag = l.comprovante
+        ? '<button class="icon-btn comprovante-tag" data-ver-comprovante="' + l.id + '" aria-label="Ver comprovante">' + ICONS.paperclip + "</button>"
+        : "";
       var checked = selecionados.indexOf(l.id) !== -1;
       var indicador = selecionando
         ? '<span class="lanc-check' + (checked ? " checked" : "") + '">' + (checked ? ICONS.check : "") + "</span>"
         : '<span class="lanc-dot' + dotClass + '" title="' + l.status + '"></span>';
-      var acoes = selecionando
+      var acoesFixas = selecionando
         ? ""
-        : '<button class="icon-btn" data-edit-lanc="' + l.id + '" aria-label="Editar">' + ICONS.edit + "</button>" +
-          '<button class="icon-btn icon-btn-del" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "</button>";
-      return (
+        : '<span class="lanc-actions-fixed">' + comprovanteTag +
+          '<button class="icon-btn" data-edit-lanc="' + l.id + '" aria-label="Editar">' + ICONS.edit + "</button>" +
+          '<button class="icon-btn icon-btn-del" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "</button></span>";
+      var itemHtml =
         '<div class="lanc-item' + rowClass + (checked ? " selected" : "") + '" data-lanc="' + l.id + '">' +
           indicador +
           '<div class="lanc-info">' +
@@ -361,10 +512,25 @@ window.App = window.App || {};
             '<div class="m">' + u.fmtDate(l.vencimento) + " · " + l.categoria + cartaoNome + tag + "</div>" +
           "</div>" +
           '<div class="lanc-valor num">' + valSpan(u.fmtBRL.format(l.valor)) + "</div>" +
-          acoes +
-        "</div>"
-      );
-    }).join("");
+          acoesFixas +
+        "</div>";
+      if (selecionando) {
+        partes.push(itemHtml);
+      } else {
+        // Swipe: painel de ações fica atrás, revelado ao arrastar o item pra
+        // esquerda (gesto comum em apps de finanças no celular).
+        partes.push(
+          '<div class="lanc-swipe" data-lanc-swipe="' + l.id + '">' +
+            '<div class="lanc-swipe-actions">' +
+              '<button class="swipe-action edit" data-edit-lanc="' + l.id + '" aria-label="Editar">' + ICONS.edit + "<span>Editar</span></button>" +
+              '<button class="swipe-action delete" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "<span>Excluir</span></button>" +
+            "</div>" +
+            itemHtml +
+          "</div>"
+        );
+      }
+    });
+    var linhas = partes.join("");
     return barra + nota + linhas + (selecionando ? renderBulkBar() : "");
   }
 
@@ -477,6 +643,35 @@ window.App = window.App || {};
     if (btnDefinirMeta) btnDefinirMeta.addEventListener("click", function () { App.sheets.openMetaSheet(mesSelecionado); });
     var btnAddReceitaExtra = document.getElementById("btnAddReceitaExtra");
     if (btnAddReceitaExtra) btnAddReceitaExtra.addEventListener("click", function () { App.sheets.openReceitaExtraSheet(mesSelecionado); });
+    var btnMetasCategoria = document.getElementById("btnMetasCategoria");
+    if (btnMetasCategoria) btnMetasCategoria.addEventListener("click", function () { App.sheets.openMetaCategoriaSheet(mesSelecionado); });
+    var btnPerfis = document.getElementById("btnPerfis");
+    if (btnPerfis) btnPerfis.addEventListener("click", function () { App.sheets.openPerfilSheet(); });
+    var btnRelatorioPDF = document.getElementById("btnRelatorioPDF");
+    if (btnRelatorioPDF) btnRelatorioPDF.addEventListener("click", function () { App.backup.gerarRelatorioMensal(mesSelecionado); });
+    var btnToggleNotif = document.getElementById("btnToggleNotif");
+    if (btnToggleNotif) btnToggleNotif.addEventListener("click", async function () {
+      var jaAtivo = App.state.prefs.notificacoesPush && App.notifications.permissaoConcedida();
+      if (jaAtivo) {
+        App.notifications.desativarNotificacoes();
+        toast("Notificações desativadas");
+        render();
+        return;
+      }
+      var ok = await App.notifications.ativarNotificacoes();
+      if (ok) toastSuccess("Notificações ativadas");
+      else toast("Permissão de notificação não concedida");
+      render();
+    });
+    var btnComprovanteVer = document.querySelectorAll("[data-ver-comprovante]");
+    btnComprovanteVer.forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var id = btn.getAttribute("data-ver-comprovante");
+        var l = App.state.lancamentos.filter(function (x) { return x.id === id; })[0];
+        if (l && l.comprovante) App.sheets.openComprovanteViewSheet(l.comprovante, l.titulo);
+      });
+    });
 
     document.querySelectorAll("[data-del-receita]").forEach(function (btn) {
       btn.addEventListener("click", function (e) {
@@ -528,6 +723,7 @@ window.App = window.App || {};
 
     document.querySelectorAll("[data-lanc]").forEach(function (row) {
       row.addEventListener("click", function () {
+        if (swipeSuppressClick) { swipeSuppressClick = false; return; }
         var id = row.getAttribute("data-lanc");
         if (selecionando) {
           var idx = selecionados.indexOf(id);
@@ -540,6 +736,7 @@ window.App = window.App || {};
         var vaiPagar = l.status === "aberto";
         l.status = vaiPagar ? "pago" : "aberto";
         data.saveState();
+        u.vibrar(vaiPagar ? [12, 40, 12] : 12);
         if (vaiPagar) {
           row.classList.add("just-paid");
           toastSuccess("Marcado como pago");
@@ -549,6 +746,7 @@ window.App = window.App || {};
         setTimeout(render, vaiPagar ? 260 : 0);
       });
     });
+    bindSwipeLancamentos();
 
     document.querySelectorAll("[data-edit-lanc]").forEach(function (btn) {
       btn.addEventListener("click", function (e) {

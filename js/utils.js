@@ -61,10 +61,63 @@ window.App = window.App || {};
     };
   }
 
+  // Rótulo relativo pra agrupar lançamentos por dia na lista: "Hoje",
+  // "Ontem" ou a data completa por extenso (ex: "22 de setembro").
+  function fmtDiaRelativo(iso) {
+    var dias = diasAte(iso);
+    if (dias === 0) return "Hoje";
+    if (dias === -1) return "Ontem";
+    if (dias === 1) return "Amanhã";
+    var d = new Date(iso + "T00:00:00");
+    var hoje = new Date(todayISO() + "T00:00:00");
+    var opts = { day: "numeric", month: "long" };
+    if (d.getFullYear() !== hoje.getFullYear()) opts.year = "numeric";
+    return d.toLocaleDateString("pt-BR", opts);
+  }
+
+  // Redimensiona e comprime uma imagem (File/Blob) pra um data URL JPEG
+  // leve, pra não inflar demais o localStorage quando anexado como
+  // comprovante. maxDim limita a maior dimensão em pixels.
+  function comprimirImagem(file, maxDim, qualidade) {
+    maxDim = maxDim || 900; qualidade = qualidade || 0.7;
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = function () { reject(new Error("Falha ao ler arquivo")); };
+      reader.onload = function () {
+        var img = new Image();
+        img.onerror = function () { reject(new Error("Falha ao carregar imagem")); };
+        img.onload = function () {
+          var w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w >= h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+            else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+          }
+          var canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          try { resolve(canvas.toDataURL("image/jpeg", qualidade)); }
+          catch (e) { reject(e); }
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Toque tátil leve ao confirmar ações (marcar como pago, excluir etc.).
+  // Só funciona em navegadores/dispositivos que suportam a Vibration API
+  // (tipicamente Android; iOS Safari não suporta) — falha silenciosamente
+  // nos demais.
+  function vibrar(padrao) {
+    try { if (navigator.vibrate) navigator.vibrate(padrao || 15); } catch (e) {}
+  }
+
   App.utils = {
     uid: uid, fmtBRL: fmtBRL, fmtMonth: fmtMonth, fmtMonthShort: fmtMonthShort,
     fmtDate: fmtDate, todayISO: todayISO, diasAte: diasAte, shiftMonth: shiftMonth,
     addMonthsToDate: addMonthsToDate, escapeHtml: escapeHtml, capitalize: capitalize,
-    debounce: debounce
+    debounce: debounce, fmtDiaRelativo: fmtDiaRelativo, comprimirImagem: comprimirImagem,
+    vibrar: vibrar
   };
 })(window.App);

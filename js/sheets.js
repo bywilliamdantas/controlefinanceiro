@@ -30,26 +30,36 @@ window.App = window.App || {};
   function openCartaoSheet(existing) {
     var editMode = !!existing;
     var root = document.getElementById("modalRoot");
+    var corAtual = (editMode && existing.cor) ? existing.cor : data.corCartao(editMode ? existing.id : "__novo__");
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop">' +
         '<div class="sheet">' +
           '<div class="sheet-head"><h2>' + (editMode ? "Editar cartão" : "Novo cartão") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
           '<label class="field">Nome<input id="fNome" type="text" placeholder="Ex: Nubank" value="' + (editMode ? u.escapeHtml(existing.nome) : "") + '">' +
             '<span class="field-error-msg" id="errNome"></span></label>' +
-          '<label class="field">Limite<input id="fLimite" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (editMode ? existing.limite : "") + '">' +
-            '<span class="field-error-msg" id="errLimite"></span></label>' +
-          '<label class="field">Dia de vencimento (opcional)<input id="fDiaVenc" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 10" value="' + (editMode && existing.diaVencimento ? existing.diaVencimento : "") + '">' +
-            '<span class="field-error-msg" id="errDiaVenc"></span></label>' +
-          '<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 12px">Definindo o dia, os lançamentos nesse cartão já vêm com a data preenchida automaticamente.</p>' +
+          '<div class="row2">' +
+            '<label class="field">Limite<input id="fLimite" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (editMode ? existing.limite : "") + '">' +
+              '<span class="field-error-msg" id="errLimite"></span></label>' +
+            '<label class="field">Cor de destaque<input id="fCor" type="color" value="' + corAtual + '" style="height:42px;padding:4px"></label>' +
+          "</div>" +
+          '<div class="row2">' +
+            '<label class="field">Dia de fechamento (opcional)<input id="fDiaFech" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 3" value="' + (editMode && existing.diaFechamento ? existing.diaFechamento : "") + '">' +
+              '<span class="field-error-msg" id="errDiaFech"></span></label>' +
+            '<label class="field">Dia de vencimento (opcional)<input id="fDiaVenc" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 10" value="' + (editMode && existing.diaVencimento ? existing.diaVencimento : "") + '">' +
+              '<span class="field-error-msg" id="errDiaVenc"></span></label>' +
+          "</div>" +
+          '<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 12px">Com fechamento e vencimento definidos, o app calcula sozinho em qual fatura cada compra cai — como no cartão de verdade.</p>' +
           '<div class="btn-row"><button class="btn btn-primary" id="fSave">Salvar</button></div>' +
         "</div>" +
       "</div>";
     bindBackdropClose(root);
     document.getElementById("fSave").addEventListener("click", function () {
-      clearAllErrors([["fNome", "errNome"], ["fLimite", "errLimite"], ["fDiaVenc", "errDiaVenc"]]);
+      clearAllErrors([["fNome", "errNome"], ["fLimite", "errLimite"], ["fDiaVenc", "errDiaVenc"], ["fDiaFech", "errDiaFech"]]);
       var nome = document.getElementById("fNome").value.trim();
       var limite = document.getElementById("fLimite").value;
+      var cor = document.getElementById("fCor").value;
       var diaVencRaw = document.getElementById("fDiaVenc").value;
+      var diaFechRaw = document.getElementById("fDiaFech").value;
       var ok = true;
       if (!nome) { setFieldError("fNome", "errNome", "Dê um nome ao cartão"); ok = false; }
       var limiteNum = parseFloat(limite);
@@ -59,10 +69,15 @@ window.App = window.App || {};
         diaVencNum = parseInt(diaVencRaw, 10);
         if (isNaN(diaVencNum) || diaVencNum < 1 || diaVencNum > 31) { setFieldError("fDiaVenc", "errDiaVenc", "Dia entre 1 e 31"); ok = false; }
       }
+      var diaFechNum = null;
+      if (diaFechRaw !== "") {
+        diaFechNum = parseInt(diaFechRaw, 10);
+        if (isNaN(diaFechNum) || diaFechNum < 1 || diaFechNum > 31) { setFieldError("fDiaFech", "errDiaFech", "Dia entre 1 e 31"); ok = false; }
+      }
       if (!ok) return;
 
       if (editMode) {
-        Object.assign(existing, { nome: nome, limite: limiteNum, diaVencimento: diaVencNum });
+        Object.assign(existing, { nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor });
         data.saveState();
         closeSheet();
         App.ui.render();
@@ -70,7 +85,7 @@ window.App = window.App || {};
         return;
       }
 
-      App.state.cartoes.push({ id: u.uid(), nome: nome, limite: limiteNum, diaVencimento: diaVencNum });
+      App.state.cartoes.push({ id: u.uid(), nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor });
       data.saveState();
       closeSheet();
       App.ui.render();
@@ -102,19 +117,25 @@ window.App = window.App || {};
       tipoInfo = '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px">Lançamento recorrente — editar aqui altera só este mês.</p>';
     }
 
+    var comprovanteAtual = editMode ? (existing.comprovante || null) : null;
+
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop">' +
         '<div class="sheet">' +
           '<div class="sheet-head"><h2>' + (editMode ? "Editar lançamento" : "Novo lançamento") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
           tipoInfo +
-          '<label class="field">Descrição<input id="fTitulo" type="text" placeholder="Ex: Supermercado" value="' + (editMode ? u.escapeHtml(existing.titulo) : "") + '">' +
-            '<span class="field-error-msg" id="errTitulo"></span></label>' +
+          '<label class="field">Descrição<input id="fTitulo" type="text" placeholder="Ex: Supermercado" autocomplete="off" value="' + (editMode ? u.escapeHtml(existing.titulo) : "") + '">' +
+            '<span class="field-error-msg" id="errTitulo"></span>' +
+            '<span class="cat-suggest-hint" id="catSuggestHint" style="display:none"></span>' +
+          "</label>" +
           '<div class="row2">' +
             '<label class="field">Valor<input id="fValor" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (editMode ? existing.valor : "") + '">' +
               '<span class="field-error-msg" id="errValor"></span></label>' +
-            '<label class="field">Vencimento<input id="fData" type="date" value="' + (editMode ? existing.vencimento : new Date().toISOString().slice(0, 10)) + '">' +
-              '<span class="field-error-msg" id="errData"></span></label>' +
+            '<label class="field" id="dataCompraWrap" style="display:none">Data da compra<input id="fDataCompra" type="date" value="' + u.todayISO() + '"></label>' +
           "</div>" +
+          '<label class="field" id="vencimentoWrap">Vencimento<input id="fData" type="date" value="' + (editMode ? existing.vencimento : new Date().toISOString().slice(0, 10)) + '">' +
+            '<span class="field-error-msg" id="errData"></span>' +
+            '<span class="fatura-hint" id="faturaHint" style="display:none"></span></label>' +
           '<label class="field">Categoria<select id="fCategoria">' + catOptions + "</select>" +
             '<button type="button" class="meta-edit-link" id="btnGerenciarCategorias" style="margin-top:6px">gerenciar categorias</button></label>' +
           '<label class="field">Pagamento<select id="fMeio">' + meioOptions + "</select></label>" +
@@ -132,6 +153,14 @@ window.App = window.App || {};
               '<label class="field" style="margin-bottom:0">Número de parcelas (valor acima = valor de cada parcela)<input id="fParcelas" type="number" min="2" max="60" value="2"></label>' +
             "</div>"
           ) +
+          '<label class="field">Comprovante (opcional)' +
+            '<div class="comprovante-box" id="comprovanteBox">' +
+              (comprovanteAtual
+                ? '<img src="' + comprovanteAtual + '" id="comprovantePreview" class="comprovante-thumb"><button type="button" class="meta-edit-link" id="btnRemoverComprovante" style="color:var(--red)">remover</button>'
+                : '<button type="button" class="btn btn-ghost" id="btnAnexarComprovante">' + ICONS.camera.replace("<svg ", '<svg style="width:16px;height:16px;vertical-align:-3px;margin-right:6px" ') + "Anexar foto</button>") +
+              '<input type="file" id="fComprovante" accept="image/*" capture="environment" style="display:none">' +
+            "</div>" +
+          "</label>" +
           '<div class="btn-row"><button class="btn btn-primary" id="fSave">' + (editMode ? "Salvar alterações" : "Salvar") + "</button></div>" +
         "</div>" +
       "</div>";
@@ -141,18 +170,59 @@ window.App = window.App || {};
     var cartaoWrap = document.getElementById("cartaoWrap");
     var cartaoSelect = document.getElementById("fCartao");
     var dataInput = document.getElementById("fData");
+    var dataCompraWrap = document.getElementById("dataCompraWrap");
+    var dataCompraInput = document.getElementById("fDataCompra");
+    var faturaHint = document.getElementById("faturaHint");
+    var vencimentoWrap = document.getElementById("vencimentoWrap");
+
     function syncCartaoWrap() { cartaoWrap.style.display = meioSelect.value === "Cartão de crédito" ? "block" : "none"; }
-    meioSelect.addEventListener("change", syncCartaoWrap);
+    meioSelect.addEventListener("change", function () { syncCartaoWrap(); syncFechamento(); });
     syncCartaoWrap();
 
-    // Ao escolher um cartão com dia de vencimento configurado, preenche a
-    // data automaticamente com a próxima data de vencimento dele — assim o
-    // usuário não precisa escolher a data manualmente todo lançamento.
+    // Quando o cartão selecionado tem dia de fechamento configurado, troca
+    // pro fluxo "data da compra → vencimento calculado automaticamente",
+    // igual à fatura de um cartão de verdade. Sem fechamento configurado,
+    // mantém o comportamento simples de antes (escolher o vencimento direto,
+    // com sugestão da próxima data de vencimento do cartão).
+    function cartaoSelecionado() {
+      return App.state.cartoes.filter(function (c) { return c.id === cartaoSelect.value; })[0];
+    }
+    function syncFechamento() {
+      var c = (!editMode && meioSelect.value === "Cartão de crédito") ? cartaoSelecionado() : null;
+      if (c && c.diaFechamento) {
+        dataCompraWrap.style.display = "block";
+        vencimentoWrap.style.display = "none";
+        recalcularFatura();
+      } else {
+        dataCompraWrap.style.display = "none";
+        vencimentoWrap.style.display = "block";
+        faturaHint.style.display = "none";
+      }
+    }
+    function recalcularFatura() {
+      var c = cartaoSelecionado();
+      if (!c || !c.diaFechamento) return;
+      var venc = data.calcularVencimentoFatura(c, dataCompraInput.value || u.todayISO());
+      if (venc) {
+        dataInput.value = venc;
+        faturaHint.style.display = "block";
+        faturaHint.textContent = "Cai na fatura que vence em " + u.fmtDate(venc) + ".";
+      }
+    }
+    dataCompraInput.addEventListener("change", recalcularFatura);
+
+    // Sem fechamento configurado: ao escolher um cartão com dia de
+    // vencimento, preenche a data automaticamente com a próxima data de
+    // vencimento dele.
     cartaoSelect.addEventListener("change", function () {
+      syncFechamento();
       if (!cartaoSelect.value) return;
+      var c = cartaoSelecionado();
+      if (!editMode && c && c.diaFechamento) return; // já tratado por syncFechamento/recalcularFatura
       var proxima = data.proximoVencimentoCartao(cartaoSelect.value);
       if (proxima) dataInput.value = proxima;
     });
+    syncFechamento();
 
     var tipoSelect = document.getElementById("fTipo");
     if (tipoSelect) {
@@ -165,6 +235,61 @@ window.App = window.App || {};
       tipoSelect.addEventListener("change", syncTipoWrap);
       syncTipoWrap();
     }
+
+    // ---- Categorização automática ----
+    // Só sugere em lançamentos novos (editar um já existente não deveria
+    // ficar "adivinhando" por cima do que o usuário já escolheu). Se o
+    // usuário mexer manualmente na categoria, para de sugerir a partir daí.
+    var categoriaSelect = document.getElementById("fCategoria");
+    var tituloInput = document.getElementById("fTitulo");
+    var catSuggestHint = document.getElementById("catSuggestHint");
+    var categoriaTocadaManualmente = false;
+    categoriaSelect.addEventListener("change", function () { categoriaTocadaManualmente = true; catSuggestHint.style.display = "none"; });
+    if (!editMode) {
+      var onTituloInput = u.debounce(function () {
+        if (categoriaTocadaManualmente) return;
+        var sugestao = data.sugerirCategoria(tituloInput.value);
+        if (sugestao) {
+          categoriaSelect.value = sugestao;
+          catSuggestHint.style.display = "inline";
+          catSuggestHint.textContent = "Categoria sugerida com base no histórico";
+        } else {
+          catSuggestHint.style.display = "none";
+        }
+      }, 300);
+      tituloInput.addEventListener("input", onTituloInput);
+    }
+
+    // ---- Comprovante ----
+    var fComprovante = document.getElementById("fComprovante");
+    function bindAnexarBtn() {
+      var btn = document.getElementById("btnAnexarComprovante");
+      if (btn) btn.addEventListener("click", function () { fComprovante.click(); });
+      var btnRemover = document.getElementById("btnRemoverComprovante");
+      if (btnRemover) btnRemover.addEventListener("click", function () {
+        comprovanteAtual = null;
+        document.getElementById("comprovanteBox").innerHTML =
+          '<button type="button" class="btn btn-ghost" id="btnAnexarComprovante">' + ICONS.camera.replace("<svg ", '<svg style="width:16px;height:16px;vertical-align:-3px;margin-right:6px" ') + "Anexar foto</button>";
+        document.getElementById("comprovanteBox").appendChild(fComprovante);
+        bindAnexarBtn();
+      });
+    }
+    bindAnexarBtn();
+    fComprovante.addEventListener("change", async function () {
+      var file = fComprovante.files[0];
+      if (!file) return;
+      try {
+        var dataUrl = await u.comprimirImagem(file, 900, 0.7);
+        comprovanteAtual = dataUrl;
+        document.getElementById("comprovanteBox").innerHTML =
+          '<img src="' + dataUrl + '" id="comprovantePreview" class="comprovante-thumb"><button type="button" class="meta-edit-link" id="btnRemoverComprovante" style="color:var(--red)">remover</button>';
+        document.getElementById("comprovanteBox").appendChild(fComprovante);
+        bindAnexarBtn();
+      } catch (e) {
+        console.warn("comprimir comprovante falhou", e);
+        App.ui.toast("Não foi possível anexar essa imagem");
+      }
+    });
 
     document.getElementById("btnGerenciarCategorias").addEventListener("click", function () {
       openCategoriaManageSheet(function () { closeSheet(); openLancamentoSheet(existing); });
@@ -184,12 +309,12 @@ window.App = window.App || {};
 
       var meio = meioSelect.value;
       var cartaoId = meio === "Cartão de crédito" ? (document.getElementById("fCartao").value || null) : null;
-      var categoria = document.getElementById("fCategoria").value;
+      var categoria = categoriaSelect.value;
 
       if (editMode) {
         Object.assign(existing, {
           titulo: titulo, valor: valor, categoria: categoria,
-          vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId
+          vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId, comprovante: comprovanteAtual
         });
         data.saveState();
         closeSheet();
@@ -204,7 +329,7 @@ window.App = window.App || {};
         App.state.lancamentos.push(Object.assign({
           id: u.uid(), titulo: titulo, valor: valor, categoria: categoria,
           vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId, status: "aberto",
-          recorrente: false, totalParcelas: 1, parcelaAtual: 1, grupoId: null
+          recorrente: false, totalParcelas: 1, parcelaAtual: 1, grupoId: null, comprovante: comprovanteAtual
         }, overrides));
       }
 
@@ -424,11 +549,151 @@ window.App = window.App || {};
     });
   }
 
+  // ---- Metas por categoria ----
+  function openMetaCategoriaSheet(mes) {
+    var root = document.getElementById("modalRoot");
+    function renderLista() {
+      var status = data.metasCategoriaStatus(mes);
+      if (!status.length) return '<p style="font-size:13px;color:var(--ink-soft);margin:0 0 14px">Nenhuma meta por categoria ainda.</p>';
+      return '<div class="cat-meta-list">' + status.map(function (m) {
+        return '<div class="cat-meta-row">' +
+          '<span class="chart-legend-dot" style="background:' + m.cor + '"></span>' +
+          '<span class="cat-meta-nome">' + m.categoria + "</span>" +
+          '<span class="cat-meta-valores num">' + u.fmtBRL.format(m.gasto) + " / " + u.fmtBRL.format(m.alvo) + "</span>" +
+          '<button class="icon-btn icon-btn-del" data-del-meta-cat="' + m.categoria + '" aria-label="Remover">' + ICONS.trash + "</button>" +
+        "</div>";
+      }).join("") + "</div>";
+    }
+    var catOptions = data.categoriasTodas().map(function (c) { return '<option value="' + c + '">' + c + "</option>"; }).join("");
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop">' +
+        '<div class="sheet">' +
+          '<div class="sheet-head"><h2>Metas por categoria — ' + u.fmtMonth(mes) + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          '<div id="metaCatList">' + renderLista() + "</div>" +
+          '<div class="row2">' +
+            '<label class="field">Categoria<select id="fMetaCatCategoria">' + catOptions + "</select></label>" +
+            '<label class="field">Valor máximo<input id="fMetaCatValor" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00"></label>' +
+          "</div>" +
+          '<div class="btn-row"><button class="btn btn-primary" id="fSaveMetaCat">Adicionar / atualizar</button></div>' +
+        "</div>" +
+      "</div>";
+    bindBackdropClose(root);
+    function bindDelButtons() {
+      document.querySelectorAll("[data-del-meta-cat]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          data.removerMetaCategoria(mes, btn.getAttribute("data-del-meta-cat"));
+          data.saveState();
+          document.getElementById("metaCatList").innerHTML = renderLista();
+          bindDelButtons();
+          App.ui.render();
+        });
+      });
+    }
+    bindDelButtons();
+    document.getElementById("fSaveMetaCat").addEventListener("click", function () {
+      var cat = document.getElementById("fMetaCatCategoria").value;
+      var valor = parseFloat(document.getElementById("fMetaCatValor").value);
+      if (isNaN(valor) || valor <= 0) { App.ui.toast("Informe um valor maior que zero"); return; }
+      data.definirMetaCategoria(mes, cat, valor);
+      data.saveState();
+      document.getElementById("fMetaCatValor").value = "";
+      document.getElementById("metaCatList").innerHTML = renderLista();
+      bindDelButtons();
+      App.ui.render();
+      App.ui.toastSuccess("Meta salva");
+    });
+  }
+
+  // ---- Visualizar comprovante em tela cheia ----
+  function openComprovanteViewSheet(dataUrl, titulo) {
+    var root = document.getElementById("modalRoot");
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop">' +
+        '<div class="sheet sheet-comprovante">' +
+          '<div class="sheet-head"><h2>' + u.escapeHtml(titulo || "Comprovante") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          '<img src="' + dataUrl + '" class="comprovante-full">' +
+        "</div>" +
+      "</div>";
+    bindBackdropClose(root);
+  }
+
+  // ---- Perfis (múltiplos usuários) ----
+  function openPerfilSheet() {
+    var root = document.getElementById("modalRoot");
+    function renderLista() {
+      var atual = data.perfilAtual();
+      return data.listaPerfis().map(function (nome) {
+        return '<div class="perfil-row' + (nome === atual ? " ativo" : "") + '" data-perfil="' + u.escapeHtml(nome) + '">' +
+          '<span class="perfil-nome">' + ICONS.user.replace("<svg ", '<svg style="width:15px;height:15px;vertical-align:-3px;margin-right:6px" ') + u.escapeHtml(nome) + (nome === atual ? ' <span class="badge badge-em-breve">atual</span>' : "") + "</span>" +
+          '<div>' +
+            (nome === atual ? "" : '<button class="btn-bulk" data-usar-perfil="' + u.escapeHtml(nome) + '">Usar</button>') +
+            '<button class="icon-btn" data-renomear-perfil="' + u.escapeHtml(nome) + '" aria-label="Renomear">' + ICONS.edit + "</button>" +
+            (data.listaPerfis().length > 1 ? '<button class="icon-btn icon-btn-del" data-excluir-perfil="' + u.escapeHtml(nome) + '" aria-label="Excluir">' + ICONS.trash + "</button>" : "") +
+          "</div>" +
+        "</div>";
+      }).join("");
+    }
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop">' +
+        '<div class="sheet">' +
+          '<div class="sheet-head"><h2>Perfis</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 14px">Cada perfil guarda seus próprios dados neste aparelho — útil pra separar contas ou dividir o app com alguém. Pra levar um perfil pra outro aparelho, use exportar/importar backup em Ajustes.</p>' +
+          '<div id="perfilList">' + renderLista() + "</div>" +
+          '<label class="field" style="margin-top:14px">Novo perfil<input id="fNovoPerfil" type="text" placeholder="Ex: Maria"></label>' +
+          '<div class="btn-row"><button class="btn btn-primary" id="fAddPerfil">Criar perfil</button></div>' +
+        "</div>" +
+      "</div>";
+    bindBackdropClose(root);
+    function bind() {
+      document.querySelectorAll("[data-usar-perfil]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          data.trocarPerfil(btn.getAttribute("data-usar-perfil"));
+          closeSheet();
+          App.ui.render();
+          App.ui.toastSuccess("Perfil alterado");
+        });
+      });
+      document.querySelectorAll("[data-renomear-perfil]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var nome = btn.getAttribute("data-renomear-perfil");
+          var novo = window.prompt("Novo nome para \"" + nome + "\":", nome);
+          if (!novo || novo.trim() === nome) return;
+          if (!data.renomearPerfil(nome, novo.trim())) { App.ui.toast("Já existe um perfil com esse nome"); return; }
+          document.getElementById("perfilList").innerHTML = renderLista();
+          bind();
+          App.ui.render();
+        });
+      });
+      document.querySelectorAll("[data-excluir-perfil]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var nome = btn.getAttribute("data-excluir-perfil");
+          if (!window.confirm('Excluir o perfil "' + nome + '" e todos os seus dados? Essa ação não pode ser desfeita.')) return;
+          data.excluirPerfil(nome);
+          document.getElementById("perfilList").innerHTML = renderLista();
+          bind();
+          App.ui.render();
+        });
+      });
+    }
+    bind();
+    document.getElementById("fAddPerfil").addEventListener("click", function () {
+      var input = document.getElementById("fNovoPerfil");
+      var nome = input.value.trim();
+      if (!nome) return;
+      if (!data.criarPerfil(nome)) { App.ui.toast("Já existe um perfil com esse nome"); return; }
+      input.value = "";
+      document.getElementById("perfilList").innerHTML = renderLista();
+      bind();
+      App.ui.toastSuccess("Perfil criado");
+    });
+  }
+
   App.sheets = {
     openCartaoSheet: openCartaoSheet, openLancamentoSheet: openLancamentoSheet,
     openCategoriaManageSheet: openCategoriaManageSheet, openMetaSheet: openMetaSheet,
     openReceitaExtraSheet: openReceitaExtraSheet, openPinConfigSheet: openPinConfigSheet,
-    openBulkEditSheet: openBulkEditSheet,
+    openBulkEditSheet: openBulkEditSheet, openMetaCategoriaSheet: openMetaCategoriaSheet,
+    openComprovanteViewSheet: openComprovanteViewSheet, openPerfilSheet: openPerfilSheet,
     closeSheet: closeSheet
   };
 })(window.App);
