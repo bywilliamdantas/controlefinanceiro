@@ -15,7 +15,7 @@ window.App = window.App || {};
 
   var tab = "resumo";
   var mesSelecionado = new Date().toISOString().slice(0, 7);
-  var filtros = { texto: "", categoria: "", cartaoId: "" };
+  var filtros = { texto: "", categoria: "", cartaoId: "", status: "", meio: "", todos: false };
   var extFiltro = { status: "realizadas", conta: "" }; // filtros da aba Extrato
   var selecionando = false;      // modo de seleção em massa (aba Lançamentos)
   var selecionados = [];         // ids dos lançamentos selecionados
@@ -474,6 +474,11 @@ window.App = window.App || {};
   function lancamentosFiltrados() {
     var texto = filtros.texto.trim().toLowerCase();
     return App.state.lancamentos.filter(function (l) {
+      if (!filtros.todos && l.vencimento.slice(0, 7) !== mesSelecionado) return false;
+      if (filtros.status === "pago" && l.status !== "pago") return false;
+      if (filtros.status === "aberto" && l.status !== "aberto") return false;
+      if (filtros.status === "vencido" && !(l.status === "aberto" && u.diasAte(l.vencimento) < 0)) return false;
+      if (filtros.meio && l.meioPagamento !== filtros.meio) return false;
       if (filtros.categoria && l.categoria !== filtros.categoria) return false;
       if (filtros.cartaoId && l.cartaoId !== filtros.cartaoId) return false;
       if (texto && l.titulo.toLowerCase().indexOf(texto) === -1) return false;
@@ -498,8 +503,40 @@ window.App = window.App || {};
           '<select id="filtroCategoria">' + catOptions + "</select>" +
           '<select id="filtroCartao">' + cartaoOptions + "</select>" +
         "</div>" +
+        '<div class="filter-selects" style="margin-top:8px">' +
+          '<select id="filtroStatus">' + [["", "Qualquer status"], ["aberto", "Em aberto"], ["vencido", "Vencidos"], ["pago", "Pagos"]].map(function (o) {
+            return '<option value="' + o[0] + '"' + (filtros.status === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+          }).join("") + "</select>" +
+          '<select id="filtroMeio"><option value="">Qualquer pagamento</option>' + data.MEIOS.map(function (m) {
+            return '<option value="' + m + '"' + (filtros.meio === m ? " selected" : "") + ">" + m + "</option>";
+          }).join("") + "</select>" +
+        "</div>" +
+        '<div class="chip-row">' +
+          '<button class="btn-bulk' + (!filtros.todos ? " active-chip" : "") + '" data-lanc-periodo="mes">Só ' + u.fmtMonth(mesSelecionado) + "</button>" +
+          '<button class="btn-bulk' + (filtros.todos ? " active-chip" : "") + '" data-lanc-periodo="todos">Todos os meses</button>' +
+        "</div>" +
       "</div>"
     );
+  }
+
+  // Resumo do que está listado: total, já pago, em aberto e vencido.
+  function renderLancResumo(lista) {
+    var tot = 0, pago = 0, aberto = 0, venc = 0, benef = 0;
+    lista.forEach(function (l) {
+      if (data.ehBeneficio(l.cartaoId)) { benef += l.valor; return; }
+      tot += l.valor;
+      if (l.status === "pago") pago += l.valor;
+      else { aberto += l.valor; if (u.diasAte(l.vencimento) < 0) venc += l.valor; }
+    });
+    var pct = tot > 0 ? (pago / tot) * 100 : 0;
+    return '<div class="card ext-sum" style="flex-wrap:wrap">' +
+      '<span>Total<b class="num">' + valSpan(u.fmtBRL.format(tot)) + "</b></span>" +
+      '<span>Pago<b class="num saldo-pos">' + valSpan(u.fmtBRL.format(pago)) + "</b></span>" +
+      '<span>Em aberto<b class="num">' + valSpan(u.fmtBRL.format(aberto)) + "</b></span>" +
+      '<div style="flex-basis:100%"><div class="bar-track"><div class="bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+      '<p class="cartao-detalhe" style="margin:6px 0 0">' + lista.length + (lista.length === 1 ? " lançamento" : " lançamentos") +
+        (venc > 0 ? ' · <span class="saldo-neg">' + valSpan(u.fmtBRL.format(venc)) + " vencido</span>" : "") +
+        (benef > 0 ? " · " + valSpan(u.fmtBRL.format(benef)) + " em benefício (fora do total)" : "") + "</p></div></div>";
   }
 
   function renderBulkBar() {
@@ -522,11 +559,11 @@ window.App = window.App || {};
   }
 
   function renderLancamentos() {
-    var filtrando = !!(filtros.texto || filtros.categoria || filtros.cartaoId);
+    var filtrando = !!(filtros.texto || filtros.categoria || filtros.cartaoId || filtros.status || filtros.meio);
     if (App.state.lancamentos.length === 0) return emptyState("lancamentos");
     var lista = lancamentosFiltrados();
     var barra = renderFilterBar();
-    if (lista.length === 0) return barra + emptyState("filtro");
+    if (lista.length === 0) return barra + emptyState("filtro") + (filtrando ? '<p class="filter-empty-note" style="text-align:center"><span class="filter-clear" id="limparFiltros">limpar filtros</span></p>' : "") + (!filtros.todos && !filtrando ? '<p class="filter-empty-note" style="text-align:center">Nenhum lançamento em ' + u.fmtMonth(mesSelecionado) + '. Use as setas para trocar de mês ou toque no + para adicionar.</p>' : "");
     var ordenados = lista.slice().sort(function (a, b) { return b.vencimento.localeCompare(a.vencimento); });
     var nota = filtrando ? '<p class="filter-empty-note">' + ordenados.length + " resultado" + (ordenados.length === 1 ? "" : "s") +
       ' · <span class="filter-clear" id="limparFiltros">limpar filtros</span></p>' : "";
@@ -589,7 +626,7 @@ window.App = window.App || {};
       }
     });
     var linhas = partes.join("");
-    return barra + nota + linhas + (selecionando ? renderBulkBar() : "");
+    return barra + renderLancResumo(lista) + nota + linhas + (selecionando ? renderBulkBar() : "");
   }
 
   // ---- Extrato ----
@@ -643,8 +680,13 @@ window.App = window.App || {};
     var el = document.getElementById("topActions");
     var eyeBtn = '<button class="eye-toggle" id="eyeToggle" aria-label="Ocultar valores">' + (sec.ofuscarAtivo() ? ICONS.eyeOff : ICONS.eye) + "</button>";
     var extra = "";
+    var monthNav =
+      '<div class="month-nav">' +
+        '<button id="prevMonth" aria-label="Mês anterior">' + ICONS.prev + "</button>" +
+        '<button id="nextMonth" aria-label="Mês seguinte">' + ICONS.next + "</button>" +
+      "</div>";
     if (tab === "lancamentos") {
-      extra =
+      extra = (filtros.todos ? "" : monthNav) +
         '<button id="exportBtn" aria-label="Exportar CSV">' + ICONS.download + "</button>" +
         '<button id="selectModeBtn" aria-label="Selecionar lançamentos" class="' + (selecionando ? "active" : "") + '">' + ICONS.selectMode + "</button>";
     } else if (tab === "resumo" || tab === "extrato") {
@@ -661,14 +703,14 @@ window.App = window.App || {};
       if (!selecionando) selecionados = [];
       render();
     });
-    if (document.getElementById("prevMonth")) document.getElementById("prevMonth").addEventListener("click", function () { mesSelecionado = u.shiftMonth(mesSelecionado, -1); render(); });
-    if (document.getElementById("nextMonth")) document.getElementById("nextMonth").addEventListener("click", function () { mesSelecionado = u.shiftMonth(mesSelecionado, 1); render(); });
+    if (document.getElementById("prevMonth")) document.getElementById("prevMonth").addEventListener("click", function () { mesSelecionado = u.shiftMonth(mesSelecionado, -1); selecionados = []; render(); });
+    if (document.getElementById("nextMonth")) document.getElementById("nextMonth").addEventListener("click", function () { mesSelecionado = u.shiftMonth(mesSelecionado, 1); selecionados = []; render(); });
     document.getElementById("eyeToggle").addEventListener("click", function () { sec.toggleOfuscar(); render(); });
   }
 
   function render() {
     document.getElementById("pageTitle").textContent = TABS.filter(function (t) { return t.id === tab; })[0].label;
-    document.getElementById("monthLabel").textContent = (tab === "resumo" || tab === "extrato") ? u.capitalize(u.fmtMonth(mesSelecionado)) : "";
+    document.getElementById("monthLabel").textContent = ((tab === "lancamentos" && !filtros.todos) || tab === "resumo" || tab === "extrato") ? u.capitalize(u.fmtMonth(mesSelecionado)) : "";
     document.getElementById("fab").style.display = (tab === "cartoes" || tab === "lancamentos") ? "flex" : "none";
     renderTabbar();
     renderTopActions();
@@ -734,8 +776,13 @@ window.App = window.App || {};
     if (filtroCategoria) filtroCategoria.addEventListener("change", function () { filtros.categoria = filtroCategoria.value; render(); });
     var filtroCartao = document.getElementById("filtroCartao");
     if (filtroCartao) filtroCartao.addEventListener("change", function () { filtros.cartaoId = filtroCartao.value; render(); });
+    var filtroStatus = document.getElementById("filtroStatus");
+    if (filtroStatus) filtroStatus.addEventListener("change", function () { filtros.status = filtroStatus.value; render(); });
+    var filtroMeio = document.getElementById("filtroMeio");
+    if (filtroMeio) filtroMeio.addEventListener("change", function () { filtros.meio = filtroMeio.value; render(); });
+    q("[data-lanc-periodo]", function (b) { b.addEventListener("click", function () { filtros.todos = b.getAttribute("data-lanc-periodo") === "todos"; selecionados = []; render(); }); });
     var limparFiltros = document.getElementById("limparFiltros");
-    if (limparFiltros) limparFiltros.addEventListener("click", function () { filtros = { texto: "", categoria: "", cartaoId: "" }; render(); });
+    if (limparFiltros) limparFiltros.addEventListener("click", function () { filtros = { texto: "", categoria: "", cartaoId: "", status: "", meio: "", todos: filtros.todos }; render(); });
 
     var exportBackupBtn = document.getElementById("exportBackupBtn");
     if (exportBackupBtn) exportBackupBtn.addEventListener("click", App.backup.exportarBackup);
@@ -830,6 +877,18 @@ window.App = window.App || {};
         var idx = App.state.lancamentos.findIndex(function (x) { return x.id === id; });
         if (idx === -1) return;
         var l = App.state.lancamentos[idx];
+        var proximos = l.grupoId ? App.state.lancamentos.filter(function (x) { return x.grupoId === l.grupoId && x.vencimento > l.vencimento; }) : [];
+        if (proximos.length) {
+          App.sheets.openExcluirGrupoSheet(l, proximos.length, function (todos) {
+            var rem = todos ? [l].concat(proximos) : [l];
+            App.state.lancamentos = App.state.lancamentos.filter(function (x) { return rem.indexOf(x) === -1; });
+            data.saveState(); render();
+            toastUndo(rem.length + (rem.length === 1 ? " lançamento excluído" : " lançamentos excluídos"), function () {
+              App.state.lancamentos = App.state.lancamentos.concat(rem); data.saveState(); render();
+            });
+          });
+          return;
+        }
         var msg = l.totalParcelas > 1
           ? 'Excluir só esta parcela (' + l.parcelaAtual + "/" + l.totalParcelas + ')? As outras parcelas continuam.'
           : 'Excluir "' + l.titulo + '"?';

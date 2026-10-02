@@ -166,6 +166,9 @@ window.App = window.App || {};
               '<label class="field" style="margin-bottom:0">Número de parcelas (valor acima = valor de cada parcela)<input id="fParcelas" type="number" min="2" max="60" value="2"></label>' +
             "</div>"
           ) +
+          (editMode && existing.grupoId && App.state.lancamentos.some(function (x) { return x.grupoId === existing.grupoId && x.vencimento > existing.vencimento; })
+            ? '<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="fPropagar" type="checkbox" style="width:auto"> Aplicar também aos próximos meses deste grupo (valor, categoria, pagamento e conta)</label>'
+            : "") +
           '<label class="field">Comprovante (opcional)' +
             '<div class="comprovante-box" id="comprovanteBox">' +
               (comprovanteAtual
@@ -339,6 +342,15 @@ window.App = window.App || {};
           titulo: titulo, valor: valor, categoria: categoria,
           vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId, comprovante: comprovanteAtual
         });
+        var prop = document.getElementById("fPropagar");
+        if (prop && prop.checked) {
+          var ref = existing.vencimento;
+          App.state.lancamentos.forEach(function (x) {
+            if (x === existing || x.grupoId !== existing.grupoId || x.vencimento <= ref) return;
+            Object.assign(x, { valor: valor, categoria: categoria, meioPagamento: meio, cartaoId: cartaoId });
+            if (existing.recorrente) x.titulo = titulo; // parcelados mantêm o "(n/N)" no título
+          });
+        }
         data.saveState();
         closeSheet();
         App.ui.render();
@@ -791,7 +803,24 @@ window.App = window.App || {};
     }
   }
 
+  // Escolha ao excluir um item de recorrente/parcelado que ainda tem meses à frente.
+  function openExcluirGrupoSheet(l, qtdProximos, onConfirm) {
+    var root = document.getElementById("modalRoot");
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop"><div class="sheet">' +
+        '<div class="sheet-head"><h2>Excluir lançamento</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+        '<p style="font-size:13.5px;color:var(--ink-soft);margin:0 0 14px">"' + u.escapeHtml(l.titulo) + '" se repete em mais ' + qtdProximos + (qtdProximos === 1 ? " mês" : " meses") + ".</p>" +
+        '<div class="btn-row" style="flex-direction:column;gap:8px">' +
+          '<button class="btn btn-ghost" id="exUm">Só este</button>' +
+          '<button class="btn btn-primary" id="exTodos" style="background:var(--red)">Este e os próximos (' + (qtdProximos + 1) + ")</button>" +
+        "</div></div></div>";
+    bindBackdropClose(root);
+    document.getElementById("exUm").addEventListener("click", function () { closeSheet(); onConfirm(false); });
+    document.getElementById("exTodos").addEventListener("click", function () { closeSheet(); onConfirm(true); });
+  }
+
   App.sheets = {
+    openExcluirGrupoSheet: openExcluirGrupoSheet,
     openPoupancaSheet: openPoupancaSheet, openMovPoupancaSheet: openMovPoupancaSheet, openExtratoDetalheSheet: openExtratoDetalheSheet,
     openCartaoSheet: openCartaoSheet, openLancamentoSheet: openLancamentoSheet,
     openCategoriaManageSheet: openCategoriaManageSheet, openMetaSheet: openMetaSheet,
