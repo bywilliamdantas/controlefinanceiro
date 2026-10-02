@@ -25,10 +25,10 @@ window.App = window.App || {};
   }
 
   async function exportarCSV() {
-    var linhas = ["Titulo,Valor,Categoria,Vencimento,Status,Recorrente,Parcela"];
+    var linhas = ["Titulo,Valor,Categoria,Vencimento,Status,Recorrente,Parcela,Pagamento"];
     App.state.lancamentos.forEach(function (l) {
       var parcelaInfo = l.totalParcelas > 1 ? (l.parcelaAtual + "/" + l.totalParcelas) : "";
-      linhas.push([l.titulo, l.valor.toFixed(2), l.categoria, l.vencimento, l.status, l.recorrente ? "Sim" : "Não", parcelaInfo].map(function (v) {
+      linhas.push([l.titulo, l.valor.toFixed(2), l.categoria, l.vencimento, l.status, l.recorrente ? "Sim" : "Não", parcelaInfo, l.meioPagamento || ""].map(function (v) {
         var s = String(v);
         return s.indexOf(",") >= 0 ? '"' + s.replace(/"/g, '""') + '"' : s;
       }).join(","));
@@ -67,7 +67,9 @@ window.App = window.App || {};
         App.state = Object.assign(base, {
           salario: Number(dados.salario) || 0,
           salarios: salariosImportados,
-          cartoes: dados.cartoes,
+          cartoes: App.data.normalizarContas(dados.cartoes),
+          poupancas: dados.poupancas || [],
+          movPoupanca: dados.movPoupanca || [],
           lancamentos: dados.lancamentos,
           receitasExtras: dados.receitasExtras || [],
           categoriasCustom: dados.categoriasCustom || [],

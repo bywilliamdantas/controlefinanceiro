@@ -14,7 +14,9 @@ window.App = window.App || {};
   var STORAGE_KEY_LEGADO = STORAGE_PREFIX; // formato antigo, sem perfil
   var PERFIS_KEY = "controle-financeiro:perfis";
   var CATEGORIAS_FIXAS = ["Alimentação", "Transporte", "Moradia", "Educação", "Lazer", "Outros"];
-  var MEIOS = ["Pix", "Cartão de crédito", "Dinheiro", "Boleto"];
+  var MEIOS = ["Pix", "Débito", "Cartão de crédito", "Dinheiro", "Boleto"];
+  var TIPO_MEIO = { "Pix": "pix", "Débito": "debito", "Cartão de crédito": "credito" }; // meio -> tipo de conta
+  var TIPOS_CONTA = { credito: "Crédito", debito: "Débito", pix: "Pix" };
   var CORES_CATEGORIA = ["#0E6B5C", "#B96A22", "#A83B32", "#5B7FBB", "#8B5FBF", "#3E8A72", "#C9944A", "#6B7280"];
   var CORES_CARTAO = ["#0E6B5C", "#8B5FBF", "#A83B32", "#B96A22", "#5B7FBB", "#3E8A72", "#C9944A", "#2F6690"];
 
@@ -96,7 +98,9 @@ window.App = window.App || {};
       salario: 0,
       salarios: {},             // { "YYYY-MM": valor } — renda fixa por mês
       receitasExtras: [],       // [{id, titulo, valor, mes: "YYYY-MM"}]
-      cartoes: [],
+      cartoes: [],             // contas: [{id, nome, tipo: credito|debito|pix, limite, ...}]
+      poupancas: [],           // [{id, nome, meta, cor}]
+      movPoupanca: [],         // [{id, poupancaId, tipo: deposito|retirada|rendimento, valor, data, descricao}]
       lancamentos: [],
       categoriasCustom: [],     // categorias extras criadas pelo usuário
       metas: {},                // { "YYYY-MM": valorAlvo }
@@ -104,6 +108,11 @@ window.App = window.App || {};
       pinHash: null,            // trava de acesso (hash simples, ver security.js)
       prefs: { ofuscarValores: false, notificacoesPush: false, ultimaChecagemNotif: null }
     };
+  }
+
+  // Contas antigas (só cartão de crédito) não têm `tipo`: viram "credito".
+  function normalizarContas(arr) {
+    return arr.map(function (c) { return c.tipo ? c : Object.assign({}, c, { tipo: "credito" }); });
   }
 
   function loadState() {
@@ -118,7 +127,9 @@ window.App = window.App || {};
           metas: parsed.metas || {},
           metasCategoria: parsed.metasCategoria || {},
           salarios: parsed.salarios || {},
-          cartoes: parsed.cartoes || [],
+          cartoes: normalizarContas(parsed.cartoes || []),
+          poupancas: parsed.poupancas || [],
+          movPoupanca: parsed.movPoupanca || [],
           lancamentos: parsed.lancamentos || [],
           prefs: Object.assign(base.prefs, parsed.prefs || {})
         });
@@ -411,7 +422,67 @@ window.App = window.App || {};
     return melhor;
   }
 
+  // ---- Tipos de conta ----
+  function tipoConta(c) { return (c && c.tipo) || "credito"; }
+  function contasDoTipo(t) { return App.state.cartoes.filter(function (c) { return tipoConta(c) === t; }); }
+
+  // Gastos do mês por conta/cartão (lançamentos sem conta agrupam pelo meio de
+  // pagamento). Cartões de benefício ficam fora, igual às despesas do mês.
+  function gastosPorConta(mes) {
+    var m = {};
+    lancamentosDoMes(mes).forEach(function (l) {
+      if (ehBeneficio(l.cartaoId)) return;
+      var c = App.state.cartoes.filter(function (x) { return x.id === l.cartaoId; })[0];
+      var k = c ? c.id : "m:" + l.meioPagamento;
+      if (!m[k]) m[k] = { rotulo: c ? c.nome : l.meioPagamento + " (sem conta)", valor: 0, cor: c ? corCartao(c.id) : "#6B7280" };
+      m[k].valor += l.valor;
+    });
+    return Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) { return b.valor - a.valor; });
+  }
+  function gastoMesConta(id, mes) {
+    return lancamentosDoMes(mes).reduce(function (s, l) { return l.cartaoId === id ? s + l.valor : s; }, 0);
+  }
+
+  // ---- Poupança ----
+  function movSinal(m) { return m.tipo === "retirada" ? -m.valor : m.valor; }
+  function saldoPoupanca(id) {
+    return App.state.movPoupanca.reduce(function (s, m) { return m.poupancaId === id ? s + movSinal(m) : s; }, 0);
+  }
+  function saldoPoupancaTotal() {
+    return App.state.poupancas.reduce(function (s, p) { return s + saldoPoupanca(p.id); }, 0);
+  }
+
+  // ---- Extrato ----
+  // Linha do tempo do mês: lançamentos (só pagos se `soRealizadas`), renda do
+  // mês e movimentos de poupança. Valor negativo = saiu da conta.
+  function extratoDoMes(mes, soRealizadas, contaId) {
+    var out = [], mesHoje = u.todayISO().slice(0, 7);
+    lancamentosDoMes(mes).forEach(function (l) {
+      if (soRealizadas && l.status !== "pago") return;
+      if (contaId && l.cartaoId !== contaId) return;
+      out.push({ kind: "lanc", id: l.id, data: l.vencimento, titulo: l.titulo, valor: -l.valor, l: l, beneficio: ehBeneficio(l.cartaoId) });
+    });
+    if (!contaId) {
+      if (mes <= mesHoje || !soRealizadas) {
+        if (salarioDoMes(mes) > 0) out.push({ kind: "renda", id: "sal-" + mes, data: mes + "-01", titulo: "Salário", valor: salarioDoMes(mes) });
+        App.state.receitasExtras.forEach(function (r) {
+          if (r.mes === mes) out.push({ kind: "renda", id: r.id, data: mes + "-01", titulo: r.titulo, valor: r.valor });
+        });
+      }
+      App.state.movPoupanca.forEach(function (m) {
+        if (m.data.slice(0, 7) !== mes) return;
+        var p = App.state.poupancas.filter(function (x) { return x.id === m.poupancaId; })[0];
+        var rot = { deposito: "Depósito", retirada: "Retirada", rendimento: "Rendimento" }[m.tipo];
+        out.push({ kind: "poup", id: m.id, data: m.data, titulo: (p ? p.nome : "Poupança") + " · " + rot, valor: m.tipo === "deposito" ? -m.valor : m.valor, mov: m });
+      });
+    }
+    return out.sort(function (a, b) { return b.data.localeCompare(a.data); });
+  }
+
   App.data = {
+    TIPO_MEIO: TIPO_MEIO, TIPOS_CONTA: TIPOS_CONTA, normalizarContas: normalizarContas,
+    tipoConta: tipoConta, contasDoTipo: contasDoTipo, gastosPorConta: gastosPorConta, gastoMesConta: gastoMesConta,
+    saldoPoupanca: saldoPoupanca, saldoPoupancaTotal: saldoPoupancaTotal, extratoDoMes: extratoDoMes,
     STORAGE_KEY: STORAGE_PREFIX,
     CATEGORIAS_FIXAS: CATEGORIAS_FIXAS,
     MEIOS: MEIOS,

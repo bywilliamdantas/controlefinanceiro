@@ -372,3 +372,11 @@ nav.tabbar svg { width: 21px; height: 21px; }
 .perfil-row.ativo .perfil-nome { font-weight: 600; }
 .perfil-nome { display: flex; align-items: center; font-size: 14px; gap: 6px; flex-wrap: wrap; }
 .perfil-row > div { display: flex; align-items: center; gap: 2px; }
+
+/* ---- Extrato, chips e poupança ---- */
+.chip-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.btn-bulk.active-chip { background: var(--teal); color: var(--surface); }
+.ext-sum { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--ink-soft); }
+.ext-sum b { display: block; margin-top: 2px; font-family: 'Space Grotesk', sans-serif; font-size: 15px; color: var(--ink); }
+.ext-sum b.saldo-pos { color: var(--teal); } .ext-sum b.saldo-neg { color: var(--red); }
+.lanc-valor.saldo-pos { color: var(--teal); }

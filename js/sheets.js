@@ -34,7 +34,8 @@ window.App = window.App || {};
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop">' +
         '<div class="sheet">' +
-          '<div class="sheet-head"><h2>' + (editMode ? "Editar cartão" : "Novo cartão") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          '<div class="sheet-head"><h2>' + (editMode ? "Editar conta" : "Nova conta") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          '<label class="field">Tipo<select id="fTipoConta"' + (editMode ? " disabled" : "") + '>' + Object.keys(data.TIPOS_CONTA).map(function (k) { return '<option value="' + k + '"' + (editMode && data.tipoConta(existing) === k ? " selected" : "") + '>' + data.TIPOS_CONTA[k] + "</option>"; }).join("") + "</select></label>" +
           '<label class="field">Nome<input id="fNome" type="text" placeholder="Ex: Nubank" value="' + (editMode ? u.escapeHtml(existing.nome) : "") + '">' +
             '<span class="field-error-msg" id="errNome"></span></label>' +
           '<div class="row2">' +
@@ -49,12 +50,21 @@ window.App = window.App || {};
               '<span class="field-error-msg" id="errDiaVenc"></span></label>' +
           "</div>" +
           '<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="fBeneficio" type="checkbox"' + (editMode && existing.beneficio ? " checked" : "") + ' style="width:auto"> Cartão de benefício (não desconta da renda)</label>' +
-          '<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 12px">Com fechamento e vencimento definidos, o app calcula sozinho em qual fatura cada compra cai — como no cartão de verdade.</p>' +
+          '<p id="fHintCredito" style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 12px">Com fechamento e vencimento definidos, o app calcula sozinho em qual fatura cada compra cai — como no cartão de verdade.</p>' +
           '<div class="btn-row"><button class="btn btn-primary" id="fSave">Salvar</button></div>' +
         "</div>" +
       "</div>";
     bindBackdropClose(root);
+    var tipoContaSel = document.getElementById("fTipoConta");
+    function syncTipoConta() {
+      var cred = tipoContaSel.value === "credito";
+      ["fLimite", "fDiaFech", "fDiaVenc", "fBeneficio"].forEach(function (id) { document.getElementById(id).closest("label").style.display = cred ? "" : "none"; });
+      document.getElementById("fHintCredito").style.display = cred ? "" : "none";
+    }
+    tipoContaSel.addEventListener("change", syncTipoConta);
+    syncTipoConta();
     document.getElementById("fSave").addEventListener("click", function () {
+      var tipoConta = tipoContaSel.value, cred = tipoConta === "credito";
       clearAllErrors([["fNome", "errNome"], ["fLimite", "errLimite"], ["fDiaVenc", "errDiaVenc"], ["fDiaFech", "errDiaFech"]]);
       var nome = document.getElementById("fNome").value.trim();
       var limite = document.getElementById("fLimite").value;
@@ -65,33 +75,34 @@ window.App = window.App || {};
       var ok = true;
       if (!nome) { setFieldError("fNome", "errNome", "Dê um nome ao cartão"); ok = false; }
       var limiteNum = parseFloat(limite);
-      if (limite === "" || isNaN(limiteNum) || limiteNum < 0) { setFieldError("fLimite", "errLimite", "Informe um limite válido"); ok = false; }
+      if (cred && (limite === "" || isNaN(limiteNum) || limiteNum < 0)) { setFieldError("fLimite", "errLimite", "Informe um limite válido"); ok = false; }
       var diaVencNum = null;
-      if (diaVencRaw !== "") {
+      if (cred && diaVencRaw !== "") {
         diaVencNum = parseInt(diaVencRaw, 10);
         if (isNaN(diaVencNum) || diaVencNum < 1 || diaVencNum > 31) { setFieldError("fDiaVenc", "errDiaVenc", "Dia entre 1 e 31"); ok = false; }
       }
       var diaFechNum = null;
-      if (diaFechRaw !== "") {
+      if (cred && diaFechRaw !== "") {
         diaFechNum = parseInt(diaFechRaw, 10);
         if (isNaN(diaFechNum) || diaFechNum < 1 || diaFechNum > 31) { setFieldError("fDiaFech", "errDiaFech", "Dia entre 1 e 31"); ok = false; }
       }
       if (!ok) return;
+      if (!cred) { limiteNum = 0; beneficio = false; }
 
       if (editMode) {
         Object.assign(existing, { nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor, beneficio: beneficio });
         data.saveState();
         closeSheet();
         App.ui.render();
-        App.ui.toastSuccess("Cartão atualizado");
+        App.ui.toastSuccess("Conta atualizada");
         return;
       }
 
-      App.state.cartoes.push({ id: u.uid(), nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor, beneficio: beneficio });
+      App.state.cartoes.push({ id: u.uid(), tipo: tipoConta, nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor, beneficio: beneficio });
       data.saveState();
       closeSheet();
       App.ui.render();
-      App.ui.toastSuccess("Cartão adicionado");
+      App.ui.toastSuccess("Conta adicionada");
     });
   }
 
@@ -141,7 +152,7 @@ window.App = window.App || {};
           '<label class="field">Categoria<select id="fCategoria">' + catOptions + "</select>" +
             '<button type="button" class="meta-edit-link" id="btnGerenciarCategorias" style="margin-top:6px">gerenciar categorias</button></label>' +
           '<label class="field">Pagamento<select id="fMeio">' + meioOptions + "</select></label>" +
-          '<div id="cartaoWrap" style="display:none"><label class="field">Cartão<select id="fCartao"><option value="">Nenhum</option>' + cartaoOptions + "</select></label></div>" +
+          '<div id="cartaoWrap" style="display:none"><label class="field">Conta<select id="fCartao"><option value="">Nenhum</option>' + cartaoOptions + "</select></label></div>" +
           (editMode ? "" :
             '<label class="field">Repetição<select id="fTipo">' +
               '<option value="unico">Único</option>' +
@@ -177,7 +188,17 @@ window.App = window.App || {};
     var faturaHint = document.getElementById("faturaHint");
     var vencimentoWrap = document.getElementById("vencimentoWrap");
 
-    function syncCartaoWrap() { cartaoWrap.style.display = meioSelect.value === "Cartão de crédito" ? "block" : "none"; }
+    // Débito, Pix e Crédito listam só as contas do tipo correspondente.
+    function syncCartaoWrap() {
+      var t = data.TIPO_MEIO[meioSelect.value];
+      cartaoWrap.style.display = t ? "block" : "none";
+      if (!t) return;
+      var sel = cartaoSelect.value || (editMode && existing.cartaoId) || "";
+      cartaoSelect.innerHTML = '<option value="">Nenhuma</option>' + data.contasDoTipo(t).map(function (c) {
+        return '<option value="' + c.id + '">' + u.escapeHtml(c.nome) + "</option>";
+      }).join("");
+      cartaoSelect.value = sel;
+    }
     meioSelect.addEventListener("change", function () { syncCartaoWrap(); syncFechamento(); });
     syncCartaoWrap();
 
@@ -310,7 +331,7 @@ window.App = window.App || {};
       if (!ok) return;
 
       var meio = meioSelect.value;
-      var cartaoId = meio === "Cartão de crédito" ? (document.getElementById("fCartao").value || null) : null;
+      var cartaoId = data.TIPO_MEIO[meio] ? (document.getElementById("fCartao").value || null) : null;
       var categoria = categoriaSelect.value;
 
       if (editMode) {
@@ -328,11 +349,14 @@ window.App = window.App || {};
       var tipo = tipoSelect.value;
 
       function addLancamento(overrides) {
-        App.state.lancamentos.push(Object.assign({
+        var nl = Object.assign({
           id: u.uid(), titulo: titulo, valor: valor, categoria: categoria,
           vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId, status: "aberto",
           recorrente: false, totalParcelas: 1, parcelaAtual: 1, grupoId: null, comprovante: comprovanteAtual
-        }, overrides));
+        }, overrides);
+        // Pix e débito saem na hora: o que já tem data de hoje ou passada nasce pago.
+        if ((meio === "Pix" || meio === "Débito") && nl.vencimento <= u.todayISO()) nl.status = "pago";
+        App.state.lancamentos.push(nl);
       }
 
       if (tipo === "recorrente") {
@@ -361,7 +385,7 @@ window.App = window.App || {};
       App.ui.render();
       // Depois de cada novo lançamento, informa quanto ainda dá pra gastar.
       var infos = [];
-      if (cartaoId) {
+      if (cartaoId && meio === "Cartão de crédito") {
         var cart = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
         if (cart) infos.push("Restante no " + cart.nome + ": " + u.fmtBRL.format(cart.limite - data.usadoCartao(cartaoId)));
       }
@@ -698,7 +722,77 @@ window.App = window.App || {};
     });
   }
 
+  // ---- Poupança ----
+  function openPoupancaSheet(existing) {
+    var ed = !!existing, root = document.getElementById("modalRoot");
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop"><div class="sheet">' +
+        '<div class="sheet-head"><h2>' + (ed ? "Editar poupança" : "Nova poupança") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+        '<label class="field">Nome<input id="pNome" type="text" placeholder="Ex: Reserva de emergência" value="' + (ed ? u.escapeHtml(existing.nome) : "") + '"><span class="field-error-msg" id="errPNome"></span></label>' +
+        '<div class="row2"><label class="field">Meta (opcional)<input id="pMeta" type="number" inputmode="decimal" step="0.01" min="0" value="' + (ed && existing.meta ? existing.meta : "") + '"></label>' +
+        '<label class="field">Cor<input id="pCor" type="color" value="' + (ed && existing.cor ? existing.cor : "#3E8A72") + '" style="height:42px;padding:4px"></label></div>' +
+        '<div class="btn-row"><button class="btn btn-primary" id="pSave">Salvar</button></div></div></div>';
+    bindBackdropClose(root);
+    document.getElementById("pSave").addEventListener("click", function () {
+      var nome = document.getElementById("pNome").value.trim();
+      if (!nome) { setFieldError("pNome", "errPNome", "Dê um nome à poupança"); return; }
+      var meta = parseFloat(document.getElementById("pMeta").value) || 0, cor = document.getElementById("pCor").value;
+      if (ed) Object.assign(existing, { nome: nome, meta: meta, cor: cor });
+      else App.state.poupancas.push({ id: u.uid(), nome: nome, meta: meta, cor: cor });
+      data.saveState(); closeSheet(); App.ui.render(); App.ui.toastSuccess("Poupança salva");
+    });
+  }
+
+  function openMovPoupancaSheet(poupancaId, tipoInicial) {
+    var p = App.state.poupancas.filter(function (x) { return x.id === poupancaId; })[0];
+    if (!p) return;
+    var root = document.getElementById("modalRoot");
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop"><div class="sheet">' +
+        '<div class="sheet-head"><h2>' + u.escapeHtml(p.nome) + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+        '<label class="field">Movimentação<select id="mTipo"><option value="deposito">Depósito</option><option value="retirada">Retirada</option><option value="rendimento">Rendimento</option></select></label>' +
+        '<div class="row2"><label class="field">Valor<input id="mValor" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00"><span class="field-error-msg" id="errMValor"></span></label>' +
+        '<label class="field">Data<input id="mData" type="date" value="' + u.todayISO() + '"></label></div>' +
+        '<label class="field">Observação (opcional)<input id="mDesc" type="text"></label>' +
+        '<div class="btn-row"><button class="btn btn-primary" id="mSave">Salvar</button></div></div></div>';
+    bindBackdropClose(root);
+    document.getElementById("mTipo").value = tipoInicial || "deposito";
+    document.getElementById("mSave").addEventListener("click", function () {
+      var valor = parseFloat(document.getElementById("mValor").value), tipo = document.getElementById("mTipo").value;
+      if (isNaN(valor) || valor <= 0) { setFieldError("mValor", "errMValor", "Informe um valor maior que zero"); return; }
+      if (tipo === "retirada" && valor > data.saldoPoupanca(p.id) && !window.confirm("A retirada é maior que o saldo atual. Registrar mesmo assim?")) return;
+      App.state.movPoupanca.push({ id: u.uid(), poupancaId: p.id, tipo: tipo, valor: valor, data: document.getElementById("mData").value || u.todayISO(), descricao: document.getElementById("mDesc").value.trim() });
+      data.saveState(); closeSheet(); App.ui.render(); App.ui.toastSuccess("Movimentação registrada");
+    });
+  }
+
+  // Detalhes de uma linha do extrato (somente leitura; lançamentos têm atalho p/ editar).
+  function openExtratoDetalheSheet(item) {
+    var rows = [["Descrição", item.titulo], ["Data", u.fmtDate(item.data)], ["Valor", u.fmtBRL.format(Math.abs(item.valor)) + (item.valor < 0 ? " (saída)" : " (entrada)")]];
+    var l = item.l;
+    if (l) {
+      var c = App.state.cartoes.filter(function (x) { return x.id === l.cartaoId; })[0];
+      rows.push(["Categoria", l.categoria], ["Pagamento", l.meioPagamento || "—"], ["Conta", c ? c.nome : "—"], ["Status", l.status === "pago" ? "Pago" : "Em aberto"]);
+      if (l.totalParcelas > 1) rows.push(["Parcela", l.parcelaAtual + "/" + l.totalParcelas]);
+      else if (l.recorrente) rows.push(["Repetição", "Recorrente (mensal)"]);
+      if (item.beneficio) rows.push(["Obs.", "Cartão de benefício — não desconta da renda"]);
+    } else if (item.mov && item.mov.descricao) rows.push(["Observação", item.mov.descricao]);
+    var root = document.getElementById("modalRoot");
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop"><div class="sheet">' +
+        '<div class="sheet-head"><h2>Detalhes</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+        rows.map(function (r) { return '<div class="lembrete-row"><span class="t" style="color:var(--ink-soft)">' + r[0] + '</span><span>' + u.escapeHtml(r[1]) + "</span></div>"; }).join("") +
+        (l ? '<div class="btn-row" style="margin-top:14px">' + (l.comprovante ? '<button class="btn btn-ghost" id="dComp">Ver comprovante</button>' : "") + '<button class="btn btn-primary" id="dEdit">Editar</button></div>' : "") +
+      "</div></div>";
+    bindBackdropClose(root);
+    if (l) {
+      document.getElementById("dEdit").addEventListener("click", function () { openLancamentoSheet(l); });
+      if (l.comprovante) document.getElementById("dComp").addEventListener("click", function () { openComprovanteViewSheet(l.comprovante, l.titulo); });
+    }
+  }
+
   App.sheets = {
+    openPoupancaSheet: openPoupancaSheet, openMovPoupancaSheet: openMovPoupancaSheet, openExtratoDetalheSheet: openExtratoDetalheSheet,
     openCartaoSheet: openCartaoSheet, openLancamentoSheet: openLancamentoSheet,
     openCategoriaManageSheet: openCategoriaManageSheet, openMetaSheet: openMetaSheet,
     openReceitaExtraSheet: openReceitaExtraSheet, openPinConfigSheet: openPinConfigSheet,

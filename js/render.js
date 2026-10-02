@@ -7,14 +7,16 @@ window.App = window.App || {};
 
   var TABS = [
     { id: "resumo", label: "Resumo", icon: ICONS.resumo },
-    { id: "cartoes", label: "Cartões", icon: ICONS.cartoes },
+    { id: "cartoes", label: "Contas", icon: ICONS.cartoes },
     { id: "lancamentos", label: "Lançamentos", icon: ICONS.lancamentos },
+    { id: "extrato", label: "Extrato", icon: ICONS.extrato },
     { id: "ajustes", label: "Ajustes", icon: ICONS.settings }
   ];
 
   var tab = "resumo";
   var mesSelecionado = new Date().toISOString().slice(0, 7);
   var filtros = { texto: "", categoria: "", cartaoId: "" };
+  var extFiltro = { status: "realizadas", conta: "" }; // filtros da aba Extrato
   var selecionando = false;      // modo de seleção em massa (aba Lançamentos)
   var selecionados = [];         // ids dos lançamentos selecionados
   var swipeSuppressClick = false; // evita disparar o toggle de pago ao fechar um swipe com toque
@@ -202,6 +204,16 @@ window.App = window.App || {};
     );
   }
 
+  function renderGraficoContaCard() {
+    var dados = data.gastosPorConta(mesSelecionado);
+    return (
+      '<div class="card">' +
+        '<p class="card-label">Gastos por cartão e conta</p>' +
+        charts.pieChart(dados, 132, true) +
+      "</div>"
+    );
+  }
+
   function renderGraficoEvolucaoCard() {
     var pontos = data.saldoUltimosMeses(mesSelecionado, 6);
     return (
@@ -312,6 +324,7 @@ window.App = window.App || {};
       renderMetaCard() +
       renderMetasCategoriaCard() +
       renderGraficoCategoriaCard() +
+      renderGraficoContaCard() +
       renderGraficoEvolucaoCard() +
       renderGraficoBarrasCard()
     );
@@ -371,9 +384,54 @@ window.App = window.App || {};
   }
 
   // ---- Cartões ----
+  function renderContaSimples(c) {
+    var cor = data.corCartao(c.id), mesHoje = new Date().toISOString().slice(0, 7);
+    return (
+      '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' +
+        '<div class="head"><h3>' + u.escapeHtml(c.nome) + ' <span class="cartao-venc-tag">' + data.TIPOS_CONTA[data.tipoConta(c)] + "</span></h3><div>" +
+          '<button class="icon-btn" data-edit-cartao="' + c.id + '" aria-label="Editar conta">' + ICONS.edit + "</button>" +
+          '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir conta">' + ICONS.trash + "</button></div></div>" +
+        '<div class="cartao-stats"><span>Gasto em ' + u.fmtMonth(mesHoje) + '<b class="num">' + valSpan(u.fmtBRL.format(data.gastoMesConta(c.id, mesHoje))) + "</b></span></div>" +
+      "</div>"
+    );
+  }
+
+  // ---- Poupança (seção dentro da aba Contas) ----
+  var ROT_MOV = { deposito: "Depósito", retirada: "Retirada", rendimento: "Rendimento" };
+  function renderPoupanca() {
+    var ps = App.state.poupancas;
+    var cab = '<div class="meta-row section-title" style="margin-top:22px"><span>Poupança' + (ps.length > 1 ? " · total " + valSpan(u.fmtBRL.format(data.saldoPoupancaTotal())) : "") +
+      '</span><button class="meta-edit-link" id="btnNovaPoup">+ nova poupança</button></div>';
+    if (!ps.length) return cab + '<div class="card"><p style="font-size:13px;color:var(--ink-soft);margin:0">Guarde dinheiro por objetivo (reserva, viagem…) e acompanhe depósitos, retiradas e rendimentos.</p></div>';
+    return cab + ps.map(function (p) {
+      var saldo = data.saldoPoupanca(p.id), pct = p.meta > 0 ? Math.min(100, saldo / p.meta * 100) : 0;
+      var movs = App.state.movPoupanca.filter(function (m) { return m.poupancaId === p.id; })
+        .sort(function (a, b) { return b.data.localeCompare(a.data); }).slice(0, 4);
+      return '<div class="card cartao-item" style="border-left:4px solid ' + (p.cor || "#3E8A72") + '">' +
+        '<div class="head"><h3>' + u.escapeHtml(p.nome) + "</h3><div>" +
+          '<button class="icon-btn" data-edit-poup="' + p.id + '" aria-label="Editar">' + ICONS.edit + "</button>" +
+          '<button class="icon-btn icon-btn-del" data-del-poup="' + p.id + '" aria-label="Excluir">' + ICONS.trash + "</button></div></div>" +
+        '<p class="big-number num" style="font-size:24px;margin:0 0 6px">' + valSpan(u.fmtBRL.format(saldo)) + "</p>" +
+        (p.meta > 0 ? '<p class="cartao-detalhe">' + valSpan("Meta " + u.fmtBRL.format(p.meta) + " · " + pct.toFixed(0) + "%") + '</p><div class="bar-track"><div class="bar-fill" style="width:' + pct.toFixed(1) + "%;background:" + (p.cor || "var(--teal)") + '"></div></div>' : "") +
+        '<div class="btn-row" style="margin:12px 0 4px"><button class="btn btn-ghost" data-mov-poup="' + p.id + '" data-tipo="deposito">Depositar</button>' +
+          '<button class="btn btn-ghost" data-mov-poup="' + p.id + '" data-tipo="retirada">Retirar</button>' +
+          '<button class="btn btn-ghost" data-mov-poup="' + p.id + '" data-tipo="rendimento">Rendimento</button></div>' +
+        movs.map(function (m) {
+          return '<div class="lembrete-row"><span class="t">' + ROT_MOV[m.tipo] + " · " + u.fmtDate(m.data) + (m.descricao ? " · " + u.escapeHtml(m.descricao) : "") + "</span>" +
+            '<span class="num" style="font-size:13px">' + valSpan((m.tipo === "retirada" ? "−" : "+") + u.fmtBRL.format(m.valor)) + "</span>" +
+            '<button class="icon-btn icon-btn-del" data-del-mov="' + m.id + '" aria-label="Excluir movimentação">' + ICONS.trash + "</button></div>";
+        }).join("") + "</div>";
+    }).join("");
+  }
+
   function renderCartoes() {
-    if (App.state.cartoes.length === 0) return emptyState("cartoes");
+    var lista = App.state.cartoes.length ? renderContasLista() : emptyState("cartoes");
+    return lista + renderPoupanca();
+  }
+
+  function renderContasLista() {
     return App.state.cartoes.map(function (c) {
+      if (data.tipoConta(c) !== "credito") return renderContaSimples(c);
       var det = data.usadoCartaoDetalhado(c.id);
       var usado = det.total;
       var restante = c.limite - usado;
@@ -428,7 +486,7 @@ window.App = window.App || {};
     var catOptions = '<option value="">Todas categorias</option>' + cats.map(function (c) {
       return '<option value="' + c + '"' + (filtros.categoria === c ? " selected" : "") + '>' + c + "</option>";
     }).join("");
-    var cartaoOptions = '<option value="">Todos cartões</option>' + App.state.cartoes.map(function (c) {
+    var cartaoOptions = '<option value="">Todas contas</option>' + App.state.cartoes.map(function (c) {
       return '<option value="' + c.id + '"' + (filtros.cartaoId === c.id ? " selected" : "") + '>' + u.escapeHtml(c.nome) + "</option>";
     }).join("");
     return (
@@ -534,6 +592,38 @@ window.App = window.App || {};
     return barra + nota + linhas + (selecionando ? renderBulkBar() : "");
   }
 
+  // ---- Extrato ----
+  function renderExtrato() {
+    var itens = data.extratoDoMes(mesSelecionado, extFiltro.status === "realizadas", extFiltro.conta);
+    var ent = 0, sai = 0, guard = 0;
+    itens.forEach(function (i) {
+      if (i.kind === "renda") ent += i.valor;
+      else if (i.kind === "lanc") { if (!i.beneficio) sai += -i.valor; }
+      else guard += -i.valor;
+    });
+    var contaOpts = '<option value="">Todas as contas</option>' + App.state.cartoes.map(function (c) {
+      return '<option value="' + c.id + '"' + (extFiltro.conta === c.id ? " selected" : "") + ">" + u.escapeHtml(c.nome) + "</option>";
+    }).join("");
+    var chip = function (id, txt) { return '<button class="btn-bulk' + (extFiltro.status === id ? " active-chip" : "") + '" data-ext-status="' + id + '">' + txt + "</button>"; };
+    var html =
+      '<div class="filter-bar"><div class="filter-selects"><select id="extConta">' + contaOpts + "</select></div>" +
+        '<div class="chip-row">' + chip("realizadas", "Realizadas") + chip("todas", "Todas (inclui em aberto)") + "</div></div>" +
+      '<div class="card ext-sum"><span>Entradas<b class="num saldo-pos">' + valSpan(u.fmtBRL.format(ent)) + "</b></span>" +
+        '<span>Saídas<b class="num saldo-neg">' + valSpan(u.fmtBRL.format(sai)) + "</b></span>" +
+        '<span>Poupança<b class="num">' + valSpan(u.fmtBRL.format(guard)) + "</b></span></div>";
+    if (!itens.length) return html + emptyState("filtro");
+    var ultimo = null;
+    itens.forEach(function (i, idx) {
+      if (i.data !== ultimo) { ultimo = i.data; html += '<div class="dia-header">' + u.capitalize(u.fmtDiaRelativo(i.data)) + "</div>"; }
+      var sub = i.l ? i.l.categoria + (i.l.status === "aberto" ? " · em aberto" : "") + (i.beneficio ? " · benefício" : "") : (i.kind === "renda" ? "Receita" : "Poupança");
+      var cls = i.kind === "poup" ? "" : (i.valor >= 0 ? " saldo-pos" : "");
+      html += '<div class="lanc-item" data-ext-item="' + idx + '"><div class="lanc-info"><div class="t">' + u.escapeHtml(i.titulo) + '</div><div class="m">' + sub + "</div></div>" +
+        '<div class="lanc-valor num' + cls + '">' + valSpan((i.valor < 0 ? "−" : "+") + u.fmtBRL.format(Math.abs(i.valor))) + "</div></div>";
+    });
+    renderExtrato.itens = itens;
+    return html;
+  }
+
   // ---- Orquestração ----
   function renderTabbar() {
     var el = document.getElementById("tabbar");
@@ -557,7 +647,7 @@ window.App = window.App || {};
       extra =
         '<button id="exportBtn" aria-label="Exportar CSV">' + ICONS.download + "</button>" +
         '<button id="selectModeBtn" aria-label="Selecionar lançamentos" class="' + (selecionando ? "active" : "") + '">' + ICONS.selectMode + "</button>";
-    } else if (tab === "resumo") {
+    } else if (tab === "resumo" || tab === "extrato") {
       extra =
         '<div class="month-nav">' +
           '<button id="prevMonth" aria-label="Mês anterior">' + ICONS.prev + "</button>" +
@@ -578,7 +668,7 @@ window.App = window.App || {};
 
   function render() {
     document.getElementById("pageTitle").textContent = TABS.filter(function (t) { return t.id === tab; })[0].label;
-    document.getElementById("monthLabel").textContent = tab === "resumo" ? u.capitalize(u.fmtMonth(mesSelecionado)) : "";
+    document.getElementById("monthLabel").textContent = (tab === "resumo" || tab === "extrato") ? u.capitalize(u.fmtMonth(mesSelecionado)) : "";
     document.getElementById("fab").style.display = (tab === "cartoes" || tab === "lancamentos") ? "flex" : "none";
     renderTabbar();
     renderTopActions();
@@ -587,6 +677,7 @@ window.App = window.App || {};
     if (tab === "resumo") main.innerHTML = renderResumo();
     else if (tab === "cartoes") main.innerHTML = renderCartoes();
     else if (tab === "lancamentos") main.innerHTML = renderLancamentos();
+    else if (tab === "extrato") main.innerHTML = renderExtrato();
     else main.innerHTML = renderAjustes();
     void main.offsetWidth;
     main.classList.add("tab-enter");
@@ -594,6 +685,32 @@ window.App = window.App || {};
   }
 
   function bindMainEvents() {
+    var q = function (sel, fn) { document.querySelectorAll(sel).forEach(fn); };
+    var extConta = document.getElementById("extConta");
+    if (extConta) extConta.addEventListener("change", function () { extFiltro.conta = extConta.value; render(); });
+    q("[data-ext-status]", function (b) { b.addEventListener("click", function () { extFiltro.status = b.getAttribute("data-ext-status"); render(); }); });
+    q("[data-ext-item]", function (row) {
+      row.addEventListener("click", function () { App.sheets.openExtratoDetalheSheet(renderExtrato.itens[+row.getAttribute("data-ext-item")]); });
+    });
+    var btnNovaPoup = document.getElementById("btnNovaPoup");
+    if (btnNovaPoup) btnNovaPoup.addEventListener("click", function () { App.sheets.openPoupancaSheet(); });
+    q("[data-edit-poup]", function (b) { b.addEventListener("click", function () {
+      App.sheets.openPoupancaSheet(App.state.poupancas.filter(function (p) { return p.id === b.getAttribute("data-edit-poup"); })[0]);
+    }); });
+    q("[data-mov-poup]", function (b) { b.addEventListener("click", function () {
+      App.sheets.openMovPoupancaSheet(b.getAttribute("data-mov-poup"), b.getAttribute("data-tipo"));
+    }); });
+    q("[data-del-poup]", function (b) { b.addEventListener("click", function () {
+      var idx = App.state.poupancas.findIndex(function (p) { return p.id === b.getAttribute("data-del-poup"); });
+      if (idx === -1 || !window.confirm('Excluir a poupança "' + App.state.poupancas[idx].nome + '" e todo o seu histórico?')) return;
+      var p = App.state.poupancas[idx], movs = App.state.movPoupanca.filter(function (m) { return m.poupancaId === p.id; });
+      App.state.movPoupanca = App.state.movPoupanca.filter(function (m) { return m.poupancaId !== p.id; });
+      excluirComUndo(App.state.poupancas, idx, p, "Poupança excluída", function () { App.state.movPoupanca = App.state.movPoupanca.concat(movs); });
+    }); });
+    q("[data-del-mov]", function (b) { b.addEventListener("click", function () {
+      var idx = App.state.movPoupanca.findIndex(function (m) { return m.id === b.getAttribute("data-del-mov"); });
+      if (idx !== -1) excluirComUndo(App.state.movPoupanca, idx, App.state.movPoupanca[idx], "Movimentação excluída");
+    }); });
     var salarioInput = document.getElementById("salarioInput");
     if (salarioInput) {
       salarioInput.addEventListener("input", function () {
@@ -701,8 +818,8 @@ window.App = window.App || {};
         var idx = App.state.cartoes.findIndex(function (x) { return x.id === id; });
         if (idx === -1) return;
         var c = App.state.cartoes[idx];
-        if (!window.confirm('Excluir o cartão "' + c.nome + '"? Os lançamentos vinculados a ele não serão apagados.')) return;
-        excluirComUndo(App.state.cartoes, idx, c, "Cartão excluído");
+        if (!window.confirm('Excluir a conta "' + c.nome + '"? Os lançamentos vinculados a ela não serão apagados.')) return;
+        excluirComUndo(App.state.cartoes, idx, c, "Conta excluída");
       });
     });
 

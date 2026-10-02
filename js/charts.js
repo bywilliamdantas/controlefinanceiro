@@ -7,7 +7,7 @@ window.App = window.App || {};
   var u = App.utils;
 
   // ---- Gráfico de pizza (gastos por categoria) ----
-  function pieChart(dados, size) {
+  function pieChart(dados, size, mostrarValor) {
     size = size || 132;
     var r = size / 2;
     if (!dados.length) return '<div class="chart-empty">Sem gastos neste mês ainda.</div>';
@@ -34,11 +34,12 @@ window.App = window.App || {};
     var svg = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '">' + paths +
       '<circle cx="' + cx + '" cy="' + cy + '" r="' + (raio * 0.56).toFixed(1) + '" fill="var(--surface)"/></svg>';
 
-    var legend = '<div class="chart-legend">' + dados.slice(0, 6).map(function (d) {
+    var legend = '<div class="chart-legend">' + dados.slice(0, 8).map(function (d) {
       var pct = ((d.valor / total) * 100).toFixed(0);
       return '<div class="chart-legend-row">' +
         '<span class="chart-legend-dot" style="background:' + d.cor + '"></span>' +
-        '<span class="chart-legend-label">' + u.escapeHtml(d.categoria) + '</span>' +
+        '<span class="chart-legend-label">' + u.escapeHtml(d.rotulo || d.categoria) + '</span>' +
+        (mostrarValor ? '<span class="num" style="font-size:11.5px;color:var(--ink-soft)"><span class="' + (App.security.ofuscarAtivo() ? "value-blur" : "") + '">' + u.fmtBRL.format(d.valor) + '</span></span>' : '') +
         '<span class="chart-legend-value num">' + pct + '%</span>' +
       '</div>';
     }).join("") + '</div>';
