@@ -21,7 +21,12 @@ window.App = window.App || {};
     var d = new Date(iso + "T00:00:00");
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   }
-  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  // Data de HOJE no fuso do aparelho. (toISOString usa UTC: no Brasil, depois das
+  // 21h já viraria "amanhã" e lançamentos/saldos pulavam um dia.)
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
 
   function diasAte(iso) {
     var hoje = new Date(todayISO() + "T00:00:00");

@@ -187,7 +187,7 @@ window.App = window.App || {};
         // a partir do mês corrente, sem apagar nada — os meses passados
         // continuam usando o mesmo valor até o usuário definir outro.
         if (Object.keys(merged.salarios).length === 0 && merged.salario) {
-          var mesAtualMig = new Date().toISOString().slice(0, 7);
+          var mesAtualMig = u.todayISO().slice(0, 7);
           merged.salarios[mesAtualMig] = merged.salario;
         }
         return merged;

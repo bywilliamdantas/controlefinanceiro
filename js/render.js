@@ -14,7 +14,7 @@ window.App = window.App || {};
   ];
 
   var tab = "resumo";
-  var mesSelecionado = new Date().toISOString().slice(0, 7);
+  var mesSelecionado = u.todayISO().slice(0, 7);
   var filtros = { texto: "", categoria: "", cartaoId: "", status: "", meio: "", todos: false };
   var extFiltro = { status: "realizadas", conta: "" }; // filtros da aba Extrato
   var selecionando = false;      // modo de seleção em massa (aba Lançamentos)
@@ -582,7 +582,7 @@ window.App = window.App || {};
   }
 
   function renderContasLista() {
-    var mesHoje = new Date().toISOString().slice(0, 7);
+    var mesHoje = u.todayISO().slice(0, 7);
     return App.state.cartoes.map(function (c) {
       var cor = data.corCartao(c.id);
       return data.tipoConta(c) === "alimentacao" ? renderContaAlimentacao(c, cor, mesHoje) : renderContaComum(c, cor, mesHoje);

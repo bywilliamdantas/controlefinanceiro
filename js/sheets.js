@@ -222,14 +222,14 @@ window.App = window.App || {};
               '<span class="field-error-msg" id="errValor"></span></label>' +
             '<label class="field" id="dataCompraWrap" style="display:none">Data da compra<input id="fDataCompra" type="date" value="' + u.todayISO() + '"></label>' +
           "</div>" +
-          '<label class="field" id="vencimentoWrap"><span id="dataLabel">Vencimento</span><input id="fData" type="date" value="' + (editMode ? existing.vencimento : new Date().toISOString().slice(0, 10)) + '">' +
+          '<label class="field" id="vencimentoWrap"><span id="dataLabel">Vencimento</span><input id="fData" type="date" value="' + (editMode ? existing.vencimento : u.todayISO()) + '">' +
             '<span class="field-error-msg" id="errData"></span>' +
             '<span class="fatura-hint" id="faturaHint" style="display:none"></span></label>' +
           '<label class="field">Categoria<select id="fCategoria">' + catOptions + "</select>" +
             '<button type="button" class="meta-edit-link" id="btnGerenciarCategorias" style="margin-top:6px">gerenciar categorias</button></label>' +
           '<label class="field">Pagamento<select id="fMeio">' + meioOptions + "</select></label>" +
           '<div id="cartaoWrap" style="display:none"><label class="field">Conta<select id="fCartao"><option value="">Nenhum</option>' + cartaoOptions + "</select>" +
-            '<span class="saldo-hint" id="saldoHint" style="display:none"></span></label></div>' +
+            '<span class="field-error-msg" id="errCartao"></span><span class="saldo-hint" id="saldoHint" style="display:none"></span></label></div>' +
           (editMode ? "" :
             '<div id="repeticaoWrap"><label class="field">Repetição<select id="fTipo">' +
               '<option value="unico">Único</option>' +
@@ -275,10 +275,14 @@ window.App = window.App || {};
       cartaoWrap.style.display = t ? "block" : "none";
       if (!t) return;
       var sel = cartaoSelect.value || (editMode && existing.cartaoId) || "";
-      cartaoSelect.innerHTML = '<option value="">Nenhuma</option>' + data.contasDoTipo(t).map(function (c) {
+      var alimSel = meioSelect.value === "Vale alimentação";
+      var contasT = data.contasDoTipo(t);
+      cartaoSelect.innerHTML = '<option value="">' + (alimSel ? "Selecione a conta" : "Nenhuma") + "</option>" + contasT.map(function (c) {
         return '<option value="' + c.id + '">' + u.escapeHtml(c.nome) + "</option>";
       }).join("");
       cartaoSelect.value = sel;
+      // Vale alimentação só desconta se houver conta: já deixa a conta selecionada.
+      if (alimSel && !cartaoSelect.value && contasT.length) cartaoSelect.value = contasT[0].id;
     }
     meioSelect.addEventListener("change", function () { syncCartaoWrap(); syncFechamento(); syncAlimentacao(); atualizarSaldoHint(); });
     syncCartaoWrap();
@@ -435,7 +439,7 @@ window.App = window.App || {};
     });
 
     document.getElementById("fSave").addEventListener("click", function () {
-      clearAllErrors([["fTitulo", "errTitulo"], ["fValor", "errValor"], ["fData", "errData"]]);
+      clearAllErrors([["fTitulo", "errTitulo"], ["fValor", "errValor"], ["fData", "errData"], ["fCartao", "errCartao"]]);
       var titulo = document.getElementById("fTitulo").value.trim();
       var valorRaw = document.getElementById("fValor").value;
       var valor = parseFloat(valorRaw);
@@ -446,6 +450,17 @@ window.App = window.App || {};
       var alimSave = ehAlim();
       if (!vencimento) { setFieldError("fData", "errData", alimSave ? "Escolha a data da transação" : "Escolha uma data de vencimento"); ok = false; }
       else if (alimSave && vencimento > u.todayISO()) { setFieldError("fData", "errData", "A data da transação não pode ser futura"); ok = false; }
+      if (alimSave) {
+        var contaAlim = data.contaPorId(document.getElementById("fCartao").value);
+        if (!contaAlim) {
+          setFieldError("fCartao", "errCartao", data.contasDoTipo("alimentacao").length ? "Escolha a conta de alimentação para descontar o valor" : "Cadastre uma conta do tipo Alimentação na aba Contas");
+          ok = false;
+        } else if (vencimento && contaAlim.baseData && vencimento < contaAlim.baseData) {
+          // O saldo é calculado a partir do último ajuste/renovação: antes disso o valor já está refletido nele.
+          setFieldError("fData", "errData", "Data anterior ao último ajuste/renovação do saldo (" + u.fmtDate(contaAlim.baseData) + "), que já inclui esse período. Use " + u.fmtDate(contaAlim.baseData) + " ou depois.");
+          ok = false;
+        }
+      }
       if (!ok) return;
 
       var meio = meioSelect.value;
