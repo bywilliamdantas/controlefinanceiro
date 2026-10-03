@@ -81,23 +81,25 @@ window.App = window.App || {};
   // funcionando normalmente pra marcar como pago; se o item já estiver
   // aberto (swiped) e o usuário tocar nele, o toque só fecha o painel.
   function bindSwipeLancamentos() {
-    var ACTIONS_WIDTH = 148;
+    var ACTIONS_WIDTH = 148; // painel Editar/Excluir (arrastar pra esquerda)
+    var PAY_WIDTH = 88;      // painel Pagar/Reabrir (arrastar pra direita)
     var openWrap = null;
     function fechar(wrap) {
       if (!wrap) return;
       var item = wrap.querySelector(".lanc-item");
       item.style.transform = "translateX(0)";
-      wrap.classList.remove("swiped");
+      wrap.classList.remove("swiped", "swiped-pay");
       if (openWrap === wrap) openWrap = null;
     }
     document.querySelectorAll(".lanc-swipe").forEach(function (wrap) {
       var item = wrap.querySelector(".lanc-item");
       var startX = 0, startY = 0, baseX = 0, dragging = false, moved = false;
+      function limitar(x) { return Math.min(PAY_WIDTH, Math.max(-ACTIONS_WIDTH, x)); }
       item.addEventListener("pointerdown", function (e) {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         dragging = true; moved = false;
         startX = e.clientX; startY = e.clientY;
-        baseX = wrap.classList.contains("swiped") ? -ACTIONS_WIDTH : 0;
+        baseX = wrap.classList.contains("swiped") ? -ACTIONS_WIDTH : (wrap.classList.contains("swiped-pay") ? PAY_WIDTH : 0);
         item.style.transition = "none";
       });
       item.addEventListener("pointermove", function (e) {
@@ -106,27 +108,31 @@ window.App = window.App || {};
         if (!moved && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
         if (!moved && Math.abs(dy) > Math.abs(dx)) { dragging = false; return; } // é scroll vertical
         moved = true;
-        var next = Math.min(0, Math.max(-ACTIONS_WIDTH, baseX + dx));
-        item.style.transform = "translateX(" + next + "px)";
+        item.style.transform = "translateX(" + limitar(baseX + dx) + "px)";
       });
       function terminar(e) {
         if (!dragging) return;
         dragging = false;
         item.style.transition = "";
         if (!moved) {
-          if (wrap.classList.contains("swiped")) {
+          if (wrap.classList.contains("swiped") || wrap.classList.contains("swiped-pay")) {
             fechar(wrap);
             swipeSuppressClick = true;
             setTimeout(function () { swipeSuppressClick = false; }, 400);
           }
           return;
         }
-        var dx = e.clientX - startX;
-        var finalX = Math.min(0, Math.max(-ACTIONS_WIDTH, baseX + dx));
+        var finalX = limitar(baseX + (e.clientX - startX));
+        if (openWrap && openWrap !== wrap) fechar(openWrap);
+        wrap.classList.remove("swiped", "swiped-pay");
         if (finalX < -ACTIONS_WIDTH / 2) {
-          if (openWrap && openWrap !== wrap) fechar(openWrap);
           item.style.transform = "translateX(-" + ACTIONS_WIDTH + "px)";
           wrap.classList.add("swiped");
+          openWrap = wrap;
+          u.vibrar(10);
+        } else if (finalX > PAY_WIDTH / 2) {
+          item.style.transform = "translateX(" + PAY_WIDTH + "px)";
+          wrap.classList.add("swiped-pay");
           openWrap = wrap;
           u.vibrar(10);
         } else {
@@ -152,7 +158,7 @@ window.App = window.App || {};
       filtro: '<svg viewBox="0 0 120 120" fill="none"><circle cx="50" cy="50" r="30" fill="var(--surface-2)"/><line x1="72" y1="72" x2="98" y2="98" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/></svg>'
     };
     var textos = {
-      cartoes: ["Nenhum cartão cadastrado", "Adicione seus cartões pra acompanhar limite e uso."],
+      cartoes: ["Nenhuma conta cadastrada", "Adicione suas contas e cartões pra acompanhar limite, saldo e uso."],
       lancamentos: ["Nenhum lançamento ainda", "Toque no + para registrar seu primeiro gasto."],
       filtro: ["Nada encontrado", "Tente ajustar a busca ou os filtros."]
     };
@@ -162,19 +168,48 @@ window.App = window.App || {};
   }
 
   // ---- Resumo ----
+  // "Contas a vencer" compacto: cabeçalho com contagem + total, resumo por
+  // urgência, só as 3 mais urgentes à vista e o resto sob "Ver todas".
+  var lembretesExpandido = false;
+  var LEMBRETES_VISIVEIS = 3;
   function renderLembretesCard() {
     var lembretes = data.lembretesPendentes();
     if (lembretes.length === 0) return "";
+    var vencidas = 0, hoje = 0, breve = 0, total = 0;
+    lembretes.forEach(function (l) {
+      var d = u.diasAte(l.vencimento);
+      total += l.valor;
+      if (d < 0) vencidas++; else if (d === 0) hoje++; else breve++;
+    });
+    var chips = [];
+    if (vencidas) chips.push('<span class="lem-chip red">' + vencidas + (vencidas === 1 ? " vencida" : " vencidas") + "</span>");
+    if (hoje) chips.push('<span class="lem-chip red">' + hoje + (hoje === 1 ? " vence hoje" : " vencem hoje") + "</span>");
+    if (breve) chips.push('<span class="lem-chip">' + breve + " em até 7 dias</span>");
+    var visiveis = lembretesExpandido ? lembretes : lembretes.slice(0, LEMBRETES_VISIVEIS);
+    var resto = lembretes.length - LEMBRETES_VISIVEIS;
+    var linhas = visiveis.map(function (l) {
+      var dias = u.diasAte(l.vencimento);
+      var situ = dias < 0 ? '<span class="lem-when late">Vencida há ' + Math.abs(dias) + (Math.abs(dias) === 1 ? " dia" : " dias") + "</span>"
+        : dias === 0 ? '<span class="lem-when late">Vence hoje</span>'
+        : '<span class="lem-when">' + (dias === 1 ? "Amanhã" : "Em " + dias + " dias") + "</span>";
+      return '<div class="lembrete-row compact">' +
+        '<div class="lem-main"><span class="t">' + u.escapeHtml(l.titulo) + "</span>" +
+          '<span class="lem-sub">' + u.fmtDate(l.vencimento) + " · " + situ + "</span></div>" +
+        '<span class="num lem-valor">' + valSpan(u.fmtBRL.format(l.valor)) + "</span></div>";
+    }).join("");
+    var chevron = '<svg class="lem-chevron' + (lembretesExpandido ? " open" : "") + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
     return (
       '<div class="card lembretes-card">' +
-        '<p class="card-label">' + ICONS.bell.replace("<svg ", '<svg style="width:13px;height:13px;vertical-align:-2px;margin-right:4px" ') + "Contas a vencer</p>" +
-        lembretes.map(function (l) {
-          var dias = u.diasAte(l.vencimento);
-          var badge = dias < 0 ? '<span class="badge badge-vencida">Vencida</span>'
-            : dias === 0 ? '<span class="badge badge-vencida">Vence hoje</span>'
-            : '<span class="badge badge-em-breve">' + dias + (dias === 1 ? " dia" : " dias") + "</span>";
-          return '<div class="lembrete-row"><span class="t">' + u.escapeHtml(l.titulo) + '</span><span class="num" style="font-size:13px">' + valSpan(u.fmtBRL.format(l.valor)) + "</span>" + badge + "</div>";
-        }).join("") +
+        '<div class="lem-head">' +
+          '<p class="card-label" style="margin:0">' + ICONS.bell.replace("<svg ", '<svg style="width:13px;height:13px;vertical-align:-2px;margin-right:4px" ') + "Contas a vencer</p>" +
+          '<span class="num lem-total">' + valSpan(u.fmtBRL.format(total)) + "</span>" +
+        "</div>" +
+        '<div class="lem-chips">' + chips.join("") + "</div>" +
+        '<div class="lem-list' + (lembretesExpandido ? " expandida" : "") + '">' + linhas + "</div>" +
+        (resto > 0
+          ? '<button class="lem-toggle" id="lembretesToggle" aria-expanded="' + lembretesExpandido + '">' +
+              (lembretesExpandido ? "Mostrar menos" : "Ver todas (" + lembretes.length + ")") + chevron + "</button>"
+          : "") +
       "</div>"
     );
   }
@@ -383,18 +418,7 @@ window.App = window.App || {};
     );
   }
 
-  // ---- Cartões ----
-  function renderContaSimples(c) {
-    var cor = data.corCartao(c.id), mesHoje = new Date().toISOString().slice(0, 7);
-    return (
-      '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' +
-        '<div class="head"><h3>' + u.escapeHtml(c.nome) + ' <span class="cartao-venc-tag">' + data.TIPOS_CONTA[data.tipoConta(c)] + "</span></h3><div>" +
-          '<button class="icon-btn" data-edit-cartao="' + c.id + '" aria-label="Editar conta">' + ICONS.edit + "</button>" +
-          '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir conta">' + ICONS.trash + "</button></div></div>" +
-        '<div class="cartao-stats"><span>Gasto em ' + u.fmtMonth(mesHoje) + '<b class="num">' + valSpan(u.fmtBRL.format(data.gastoMesConta(c.id, mesHoje))) + "</b></span></div>" +
-      "</div>"
-    );
-  }
+  // ---- Contas (renderização abaixo, em renderContasLista) ----
 
   // ---- Poupança (seção dentro da aba Contas) ----
   var ROT_MOV = { deposito: "Depósito", retirada: "Retirada", rendimento: "Rendimento" };
@@ -429,44 +453,75 @@ window.App = window.App || {};
     return lista + renderPoupanca();
   }
 
-  function renderContasLista() {
-    return App.state.cartoes.map(function (c) {
-      if (data.tipoConta(c) !== "credito") return renderContaSimples(c);
+  function contaHead(c, tagsHtml) {
+    return '<div class="head"><h3>' + u.escapeHtml(c.nome) + tagsHtml + "</h3><div>" +
+      '<button class="icon-btn" data-edit-cartao="' + c.id + '" aria-label="Editar conta">' + ICONS.edit + "</button>" +
+      '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir conta">' + ICONS.trash + "</button></div></div>";
+  }
+
+  // Conta Alimentação: saldo disponível (em vez de limite) e data de renovação.
+  function renderContaAlimentacao(c, cor, mesHoje) {
+    var saldo = data.saldoAlimentacao(c);
+    var pct = c.valorRenovacao > 0 ? Math.max(0, Math.min(100, (saldo / c.valorRenovacao) * 100)) : 0;
+    var baixo = saldo < 0 || pct < 20;
+    var prox = data.proximaRenovacao(c);
+    var regra = c.modoRenovacao === "somar" ? "acumula com a sobra" : "repõe o saldo";
+    return (
+      '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' +
+        contaHead(c, ' <span class="cartao-venc-tag">Alimentação' + (c.diaRenovacao ? " · renova dia " + c.diaRenovacao : "") + "</span>") +
+        '<p class="cartao-saldo-label">Saldo disponível</p>' +
+        '<p class="big-number num ' + (saldo < 0 ? "saldo-neg" : "") + '" style="font-size:26px;margin:0 0 10px">' + valSpan(u.fmtBRL.format(saldo)) + "</p>" +
+        '<div class="bar-track"><div class="bar-fill' + (baixo ? " high" : "") + '" style="width:' + pct.toFixed(1) + "%;background:" + (baixo ? "var(--red)" : cor) + '"></div></div>' +
+        '<div class="cartao-stats" style="margin:10px 0 0">' +
+          "<span>Gasto em " + u.fmtMonth(mesHoje) + '<b class="num">' + valSpan(u.fmtBRL.format(data.gastoMesConta(c.id, mesHoje))) + "</b></span>" +
+          (prox ? "<span>Próxima renovação<b class=\"num\">" + u.fmtDate(prox) + "</b></span>" : "") +
+        "</div>" +
+        '<p class="cartao-dica">Renova ' + valSpan(u.fmtBRL.format(c.valorRenovacao || 0)) + " — " + regra + ".</p>" +
+      "</div>"
+    );
+  }
+
+  // Conta comum: mostra o bloco de cada recurso ativo (crédito com limite/uso;
+  // Pix e débito como tags + gasto do mês).
+  function renderContaComum(c, cor, mesHoje) {
+    var temCredito = data.temRecurso(c, "credito");
+    var tags = ' <span class="cartao-venc-tag">' + data.rotuloRecursos(c) + "</span>";
+    var corpo = "";
+    if (temCredito) {
+      if (c.diaFechamento) tags += ' <span class="cartao-venc-tag">fecha dia ' + c.diaFechamento + "</span>";
+      if (c.diaVencimento) tags += ' <span class="cartao-venc-tag">vence dia ' + c.diaVencimento + "</span>";
       var det = data.usadoCartaoDetalhado(c.id);
-      var usado = det.total;
-      var restante = c.limite - usado;
+      var usado = det.total, restante = c.limite - usado;
       var pct = c.limite > 0 ? Math.min(100, (usado / c.limite) * 100) : 0;
-      var cor = data.corCartao(c.id);
       var partes = [];
       if (det.recorrente > 0) partes.push(u.fmtBRL.format(det.recorrente) + " recorrentes em aberto");
       if (det.parcelado > 0) partes.push(u.fmtBRL.format(det.parcelado) + " em parcelas abertas");
-      var detalhe = partes.length ? '<p class="cartao-detalhe">' + valSpan(partes.join(" · ")) + "</p>" : "";
-      var tags = "";
-      if (c.diaFechamento) tags += ' <span class="cartao-venc-tag">fecha dia ' + c.diaFechamento + "</span>";
-      if (c.diaVencimento) tags += ' <span class="cartao-venc-tag">vence dia ' + c.diaVencimento + "</span>";
       var melhorDia = data.melhorDiaCompra(c);
-      var dicaCompra = melhorDia
-        ? '<p class="cartao-dica">Compre até ' + u.fmtDate(melhorDia.fechamento) + " pra cair na fatura de " + u.fmtMonth(melhorDia.vencAtual.slice(0, 7)) +
-          "; depois disso, só na de " + u.fmtMonth(melhorDia.vencProximo.slice(0, 7)) + ".</p>"
-        : "";
-      return (
-        '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' +
-          '<div class="head"><h3>' + u.escapeHtml(c.nome) + tags + '</h3>' +
-            '<div>' +
-              '<button class="icon-btn" data-edit-cartao="' + c.id + '" aria-label="Editar cartão">' + ICONS.edit + "</button>" +
-              '<button class="icon-btn icon-btn-del" data-del-cartao="' + c.id + '" aria-label="Excluir cartão">' + ICONS.trash + "</button>" +
-            "</div>" +
-          "</div>" +
-          '<div class="cartao-stats">' +
-            "<span>Limite" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(c.limite)) + "</b></span>" +
-            "<span>Usado" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(usado)) + "</b></span>" +
-            "<span>Restante" + "<b class=\"num\">" + valSpan(u.fmtBRL.format(restante)) + "</b></span>" +
-          "</div>" +
-          detalhe +
-          '<div class="bar-track"><div class="bar-fill' + (pct > 80 ? " high" : "") + '" style="width:' + pct.toFixed(1) + '%;background:' + (pct > 80 ? "var(--red)" : cor) + '"></div></div>' +
-          dicaCompra +
-        "</div>"
-      );
+      corpo +=
+        '<div class="cartao-stats">' +
+          "<span>Limite<b class=\"num\">" + valSpan(u.fmtBRL.format(c.limite)) + "</b></span>" +
+          "<span>Usado<b class=\"num\">" + valSpan(u.fmtBRL.format(usado)) + "</b></span>" +
+          "<span>Restante<b class=\"num\">" + valSpan(u.fmtBRL.format(restante)) + "</b></span>" +
+        "</div>" +
+        (partes.length ? '<p class="cartao-detalhe">' + valSpan(partes.join(" · ")) + "</p>" : "") +
+        '<div class="bar-track"><div class="bar-fill' + (pct > 80 ? " high" : "") + '" style="width:' + pct.toFixed(1) + "%;background:" + (pct > 80 ? "var(--red)" : cor) + '"></div></div>' +
+        (melhorDia
+          ? '<p class="cartao-dica">Compre até ' + u.fmtDate(melhorDia.fechamento) + " pra cair na fatura de " + u.fmtMonth(melhorDia.vencAtual.slice(0, 7)) +
+            "; depois disso, só na de " + u.fmtMonth(melhorDia.vencProximo.slice(0, 7)) + ".</p>"
+          : "");
+    }
+    // Sem crédito, ou com mais de um recurso: mostra o total gasto no mês na conta.
+    if (!temCredito || (c.recursos || []).length > 1) {
+      corpo += '<div class="cartao-stats" style="' + (temCredito ? "margin:12px 0 0" : "") + '"><span>Gasto em ' + u.fmtMonth(mesHoje) + '<b class="num">' + valSpan(u.fmtBRL.format(data.gastoMesConta(c.id, mesHoje))) + "</b></span></div>";
+    }
+    return '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' + contaHead(c, tags) + corpo + "</div>";
+  }
+
+  function renderContasLista() {
+    var mesHoje = new Date().toISOString().slice(0, 7);
+    return App.state.cartoes.map(function (c) {
+      var cor = data.corCartao(c.id);
+      return data.tipoConta(c) === "alimentacao" ? renderContaAlimentacao(c, cor, mesHoje) : renderContaComum(c, cor, mesHoje);
     }).join("");
   }
 
@@ -616,6 +671,11 @@ window.App = window.App || {};
         // esquerda (gesto comum em apps de finanças no celular).
         partes.push(
           '<div class="lanc-swipe" data-lanc-swipe="' + l.id + '">' +
+            '<div class="lanc-swipe-pay">' +
+              (l.status === "aberto"
+                ? '<button class="swipe-action pay" data-pay-lanc="' + l.id + '" aria-label="Pagar">' + ICONS.check + "<span>Pagar</span></button>"
+                : '<button class="swipe-action reopen" data-pay-lanc="' + l.id + '" aria-label="Reabrir">' + ICONS.repeat + "<span>Reabrir</span></button>") +
+            "</div>" +
             '<div class="lanc-swipe-actions">' +
               '<button class="swipe-action edit" data-edit-lanc="' + l.id + '" aria-label="Editar">' + ICONS.edit + "<span>Editar</span></button>" +
               '<button class="swipe-action delete" data-del-lanc="' + l.id + '" aria-label="Excluir">' + ICONS.trash + "<span>Excluir</span></button>" +
@@ -709,6 +769,7 @@ window.App = window.App || {};
   }
 
   function render() {
+    data.aplicarRenovacoes(); // renovações de contas Alimentação cuja data já chegou
     document.getElementById("pageTitle").textContent = TABS.filter(function (t) { return t.id === tab; })[0].label;
     document.getElementById("monthLabel").textContent = ((tab === "lancamentos" && !filtros.todos) || tab === "resumo" || tab === "extrato") ? u.capitalize(u.fmtMonth(mesSelecionado)) : "";
     document.getElementById("fab").style.display = (tab === "cartoes" || tab === "lancamentos") ? "flex" : "none";
@@ -923,6 +984,36 @@ window.App = window.App || {};
       });
     });
     bindSwipeLancamentos();
+
+    var lemToggle = document.getElementById("lembretesToggle");
+    if (lemToggle) lemToggle.addEventListener("click", function () { lembretesExpandido = !lembretesExpandido; render(); });
+
+    // Pagar (arrastar o lançamento pra direita): marca como pago e atualiza
+    // limite do cartão, totais pagos/em aberto e "Contas a vencer".
+    document.querySelectorAll("[data-pay-lanc]").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var l = App.state.lancamentos.filter(function (x) { return x.id === btn.getAttribute("data-pay-lanc"); })[0];
+        if (!l) return;
+        var vaiPagar = l.status === "aberto";
+        l.status = vaiPagar ? "pago" : "aberto";
+        data.saveState();
+        u.vibrar(vaiPagar ? [12, 40, 12] : 12);
+        if (vaiPagar) {
+          var msg = "Marcado como pago";
+          var conta = l.cartaoId ? App.state.cartoes.filter(function (x) { return x.id === l.cartaoId; })[0] : null;
+          if (conta && l.meioPagamento === "Cartão de crédito" && data.temRecurso(conta, "credito")) {
+            msg += " · Restante em " + conta.nome + ": " + u.fmtBRL.format(conta.limite - data.usadoCartao(conta.id));
+          }
+          var rowEl = btn.closest(".lanc-swipe");
+          if (rowEl) { var it = rowEl.querySelector(".lanc-item"); if (it) it.classList.add("just-paid"); }
+          toastSuccess(msg);
+        } else {
+          toast("Marcado como em aberto");
+        }
+        setTimeout(render, vaiPagar ? 260 : 0);
+      });
+    });
 
     document.querySelectorAll("[data-edit-lanc]").forEach(function (btn) {
       btn.addEventListener("click", function (e) {

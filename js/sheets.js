@@ -24,81 +24,156 @@ window.App = window.App || {};
     document.getElementById("backdrop").addEventListener("click", function (e) { if (e.target.id === "backdrop") closeSheet(); });
   }
 
-  // ---- Cartão ----
-  // Sem `existing`: cria cartão novo. Com `existing`: edita nome, limite e dia
-  // de vencimento do cartão já cadastrado, sem precisar excluir e recriar.
+  // ---- Conta ----
+  // Sem `existing`: cria conta nova. Com `existing`: edita a conta já cadastrada.
+  // Dois tipos: "conta" (Pix / Crédito / Débito combináveis) e "alimentacao"
+  // (saldo disponível com renovação em data fixa, em vez de limite/vencimento).
   function openCartaoSheet(existing) {
     var editMode = !!existing;
     var root = document.getElementById("modalRoot");
+    var tipoInicial = editMode ? data.tipoConta(existing) : "conta";
+    var recAtuais = (editMode && tipoInicial === "conta") ? existing.recursos : ["credito"];
     var corAtual = (editMode && existing.cor) ? existing.cor : data.corCartao(editMode ? existing.id : "__novo__");
+    var al = (editMode && tipoInicial === "alimentacao") ? existing : {};
+    var saldoAtual = editMode && tipoInicial === "alimentacao" ? data.saldoAlimentacao(existing).toFixed(2) : "";
+
+    var recursoChips = Object.keys(data.RECURSOS).map(function (k) {
+      return '<label class="recurso-chip"><input type="checkbox" data-recurso="' + k + '"' + (recAtuais.indexOf(k) !== -1 ? " checked" : "") + '><span>' + data.RECURSOS[k] + "</span></label>";
+    }).join("");
+
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop">' +
         '<div class="sheet">' +
           '<div class="sheet-head"><h2>' + (editMode ? "Editar conta" : "Nova conta") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
-          '<label class="field">Tipo<select id="fTipoConta"' + (editMode ? " disabled" : "") + '>' + Object.keys(data.TIPOS_CONTA).map(function (k) { return '<option value="' + k + '"' + (editMode && data.tipoConta(existing) === k ? " selected" : "") + '>' + data.TIPOS_CONTA[k] + "</option>"; }).join("") + "</select></label>" +
+          '<label class="field">Tipo<select id="fTipoConta"' + (editMode ? " disabled" : "") + ">" +
+            Object.keys(data.TIPOS_CONTA).map(function (k) { return '<option value="' + k + '"' + (tipoInicial === k ? " selected" : "") + ">" + data.TIPOS_CONTA[k] + "</option>"; }).join("") + "</select></label>" +
           '<label class="field">Nome<input id="fNome" type="text" placeholder="Ex: Nubank" value="' + (editMode ? u.escapeHtml(existing.nome) : "") + '">' +
             '<span class="field-error-msg" id="errNome"></span></label>' +
-          '<div class="row2">' +
-            '<label class="field">Limite<input id="fLimite" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (editMode ? existing.limite : "") + '">' +
-              '<span class="field-error-msg" id="errLimite"></span></label>' +
-            '<label class="field">Cor de destaque<input id="fCor" type="color" value="' + corAtual + '" style="height:42px;padding:4px"></label>' +
+
+          // --- Conta comum: recursos ---
+          '<div id="boxConta">' +
+            '<div class="field" style="margin-bottom:14px">O que esta conta faz?' +
+              '<div class="recurso-row" id="fRecursos">' + recursoChips + "</div>" +
+              '<span class="field-error-msg" id="errRecursos"></span></div>' +
+            '<div id="boxCredito" class="tipo-fields">' +
+              '<div class="row2">' +
+                '<label class="field">Limite do crédito<input id="fLimite" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (editMode && existing.limite ? existing.limite : "") + '">' +
+                  '<span class="field-error-msg" id="errLimite"></span></label>' +
+                '<label class="field">Dia de fechamento (opcional)<input id="fDiaFech" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 3" value="' + (editMode && existing.diaFechamento ? existing.diaFechamento : "") + '">' +
+                  '<span class="field-error-msg" id="errDiaFech"></span></label>' +
+              "</div>" +
+              '<label class="field">Dia de vencimento (opcional)<input id="fDiaVenc" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 10" value="' + (editMode && existing.diaVencimento ? existing.diaVencimento : "") + '">' +
+                '<span class="field-error-msg" id="errDiaVenc"></span></label>' +
+              '<label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-bottom:6px"><input id="fBeneficio" type="checkbox"' + (editMode && existing.beneficio ? " checked" : "") + ' style="width:auto"> Cartão de benefício (não desconta da renda)</label>' +
+              '<p style="font-size:12.5px;color:var(--ink-soft);margin:0">Com fechamento e vencimento definidos, o app calcula sozinho em qual fatura cada compra cai — como no cartão de verdade.</p>' +
+            "</div>" +
           "</div>" +
-          '<div class="row2">' +
-            '<label class="field">Dia de fechamento (opcional)<input id="fDiaFech" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 3" value="' + (editMode && existing.diaFechamento ? existing.diaFechamento : "") + '">' +
-              '<span class="field-error-msg" id="errDiaFech"></span></label>' +
-            '<label class="field">Dia de vencimento (opcional)<input id="fDiaVenc" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 10" value="' + (editMode && existing.diaVencimento ? existing.diaVencimento : "") + '">' +
-              '<span class="field-error-msg" id="errDiaVenc"></span></label>' +
+
+          // --- Alimentação ---
+          '<div id="boxAlim" class="tipo-fields" style="display:none">' +
+            '<label class="field">Saldo disponível<input id="fSaldo" type="number" inputmode="decimal" step="0.01" placeholder="0,00" value="' + saldoAtual + '">' +
+              '<span class="field-error-msg" id="errSaldo"></span></label>' +
+            '<div class="row2">' +
+              '<label class="field">Valor da renovação<input id="fValorRen" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (al.valorRenovacao || "") + '">' +
+                '<span class="field-error-msg" id="errValorRen"></span></label>' +
+              '<label class="field">Dia da renovação<input id="fDiaRen" type="number" inputmode="numeric" min="1" max="31" placeholder="Ex: 5" value="' + (al.diaRenovacao || "") + '">' +
+                '<span class="field-error-msg" id="errDiaRen"></span></label>' +
+            "</div>" +
+            '<label class="field" style="margin-bottom:6px">Na renovação<select id="fModoRen">' +
+              '<option value="repor"' + (al.modoRenovacao !== "somar" ? " selected" : "") + '>Repor saldo (a sobra não acumula)</option>' +
+              '<option value="somar"' + (al.modoRenovacao === "somar" ? " selected" : "") + '>Acumular (soma à sobra)</option>' +
+            "</select></label>" +
+            '<p style="font-size:12.5px;color:var(--ink-soft);margin:0">Repor: o saldo volta ao valor da renovação. Acumular: o valor é somado ao que sobrou. Cada saída lançada nesta conta desconta do saldo automaticamente e não conta como despesa da sua renda.</p>' +
           "</div>" +
-          '<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="fBeneficio" type="checkbox"' + (editMode && existing.beneficio ? " checked" : "") + ' style="width:auto"> Cartão de benefício (não desconta da renda)</label>' +
-          '<p id="fHintCredito" style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 12px">Com fechamento e vencimento definidos, o app calcula sozinho em qual fatura cada compra cai — como no cartão de verdade.</p>' +
+
+          '<label class="field">Cor de destaque<input id="fCor" type="color" value="' + corAtual + '" style="height:42px;padding:4px"></label>' +
           '<div class="btn-row"><button class="btn btn-primary" id="fSave">Salvar</button></div>' +
         "</div>" +
       "</div>";
     bindBackdropClose(root);
+
     var tipoContaSel = document.getElementById("fTipoConta");
+    function recursosMarcados() {
+      return Array.prototype.slice.call(document.querySelectorAll("[data-recurso]")).filter(function (i) { return i.checked; })
+        .map(function (i) { return i.getAttribute("data-recurso"); });
+    }
     function syncTipoConta() {
-      var cred = tipoContaSel.value === "credito";
-      ["fLimite", "fDiaFech", "fDiaVenc", "fBeneficio"].forEach(function (id) { document.getElementById(id).closest("label").style.display = cred ? "" : "none"; });
-      document.getElementById("fHintCredito").style.display = cred ? "" : "none";
+      var alim = tipoContaSel.value === "alimentacao";
+      document.getElementById("boxConta").style.display = alim ? "none" : "";
+      document.getElementById("boxAlim").style.display = alim ? "" : "none";
+      document.getElementById("boxCredito").style.display = (!alim && recursosMarcados().indexOf("credito") !== -1) ? "" : "none";
     }
     tipoContaSel.addEventListener("change", syncTipoConta);
+    document.querySelectorAll("[data-recurso]").forEach(function (i) { i.addEventListener("change", syncTipoConta); });
     syncTipoConta();
-    document.getElementById("fSave").addEventListener("click", function () {
-      var tipoConta = tipoContaSel.value, cred = tipoConta === "credito";
-      clearAllErrors([["fNome", "errNome"], ["fLimite", "errLimite"], ["fDiaVenc", "errDiaVenc"], ["fDiaFech", "errDiaFech"]]);
-      var nome = document.getElementById("fNome").value.trim();
-      var limite = document.getElementById("fLimite").value;
-      var cor = document.getElementById("fCor").value;
-      var diaVencRaw = document.getElementById("fDiaVenc").value;
-      var diaFechRaw = document.getElementById("fDiaFech").value;
-      var beneficio = document.getElementById("fBeneficio").checked;
-      var ok = true;
-      if (!nome) { setFieldError("fNome", "errNome", "Dê um nome ao cartão"); ok = false; }
-      var limiteNum = parseFloat(limite);
-      if (cred && (limite === "" || isNaN(limiteNum) || limiteNum < 0)) { setFieldError("fLimite", "errLimite", "Informe um limite válido"); ok = false; }
-      var diaVencNum = null;
-      if (cred && diaVencRaw !== "") {
-        diaVencNum = parseInt(diaVencRaw, 10);
-        if (isNaN(diaVencNum) || diaVencNum < 1 || diaVencNum > 31) { setFieldError("fDiaVenc", "errDiaVenc", "Dia entre 1 e 31"); ok = false; }
-      }
-      var diaFechNum = null;
-      if (cred && diaFechRaw !== "") {
-        diaFechNum = parseInt(diaFechRaw, 10);
-        if (isNaN(diaFechNum) || diaFechNum < 1 || diaFechNum > 31) { setFieldError("fDiaFech", "errDiaFech", "Dia entre 1 e 31"); ok = false; }
-      }
-      if (!ok) return;
-      if (!cred) { limiteNum = 0; beneficio = false; }
 
+    function lerDia(id, errId) {
+      var raw = document.getElementById(id).value;
+      if (raw === "") return { vazio: true, ok: true, valor: null };
+      var n = parseInt(raw, 10);
+      if (isNaN(n) || n < 1 || n > 31) { setFieldError(id, errId, "Dia entre 1 e 31"); return { ok: false }; }
+      return { ok: true, valor: n };
+    }
+
+    document.getElementById("fSave").addEventListener("click", function () {
+      var alim = tipoContaSel.value === "alimentacao";
+      clearAllErrors([["fNome", "errNome"], ["fLimite", "errLimite"], ["fDiaVenc", "errDiaVenc"], ["fDiaFech", "errDiaFech"], ["fSaldo", "errSaldo"], ["fValorRen", "errValorRen"], ["fDiaRen", "errDiaRen"]]);
+      document.getElementById("errRecursos").classList.remove("show");
+      var nome = document.getElementById("fNome").value.trim();
+      var cor = document.getElementById("fCor").value;
+      var ok = true;
+      if (!nome) { setFieldError("fNome", "errNome", "Dê um nome à conta"); ok = false; }
+
+      if (alim) {
+        var saldoRaw = document.getElementById("fSaldo").value, saldo = parseFloat(saldoRaw);
+        var renRaw = document.getElementById("fValorRen").value, valorRen = parseFloat(renRaw);
+        var diaRen = lerDia("fDiaRen", "errDiaRen");
+        if (saldoRaw === "" || isNaN(saldo)) { setFieldError("fSaldo", "errSaldo", "Informe o saldo disponível"); ok = false; }
+        if (renRaw === "" || isNaN(valorRen) || valorRen <= 0) { setFieldError("fValorRen", "errValorRen", "Informe o valor da renovação"); ok = false; }
+        if (diaRen.vazio) { setFieldError("fDiaRen", "errDiaRen", "Informe o dia da renovação"); ok = false; }
+        else if (!diaRen.ok) ok = false;
+        if (!ok) return;
+        var camposAlim = { nome: nome, cor: cor, valorRenovacao: valorRen, diaRenovacao: diaRen.valor, modoRenovacao: document.getElementById("fModoRen").value };
+        if (editMode) {
+          Object.assign(existing, camposAlim);
+          if (Math.abs(saldo - data.saldoAlimentacao(existing)) > 0.004) data.definirSaldoAtual(existing, saldo);
+        } else {
+          var nova = Object.assign({ id: u.uid(), tipo: "alimentacao", limite: 0, saldoBase: 0, baseData: u.todayISO() }, camposAlim);
+          App.state.cartoes.push(nova);
+          data.definirSaldoAtual(nova, saldo);
+        }
+        data.aplicarRenovacoes();
+        data.saveState();
+        closeSheet();
+        App.ui.render();
+        App.ui.toastSuccess(editMode ? "Conta atualizada" : "Conta adicionada");
+        return;
+      }
+
+      var recursos = recursosMarcados(), cred = recursos.indexOf("credito") !== -1;
+      if (!recursos.length) { var er = document.getElementById("errRecursos"); er.textContent = "Marque ao menos uma opção"; er.classList.add("show"); ok = false; }
+      var limiteNum = parseFloat(document.getElementById("fLimite").value);
+      if (cred && (document.getElementById("fLimite").value === "" || isNaN(limiteNum) || limiteNum < 0)) { setFieldError("fLimite", "errLimite", "Informe um limite válido"); ok = false; }
+      var diaVenc = cred ? lerDia("fDiaVenc", "errDiaVenc") : { ok: true, valor: null };
+      var diaFech = cred ? lerDia("fDiaFech", "errDiaFech") : { ok: true, valor: null };
+      if (!diaVenc.ok || !diaFech.ok) ok = false;
+      if (!ok) return;
+      var camposConta = {
+        nome: nome, cor: cor, recursos: recursos,
+        limite: cred ? limiteNum : 0,
+        diaVencimento: cred ? diaVenc.valor : null,
+        diaFechamento: cred ? diaFech.valor : null,
+        beneficio: cred ? document.getElementById("fBeneficio").checked : false
+      };
       if (editMode) {
-        Object.assign(existing, { nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor, beneficio: beneficio });
+        Object.assign(existing, camposConta);
         data.saveState();
         closeSheet();
         App.ui.render();
         App.ui.toastSuccess("Conta atualizada");
         return;
       }
-
-      App.state.cartoes.push({ id: u.uid(), tipo: tipoConta, nome: nome, limite: limiteNum, diaVencimento: diaVencNum, diaFechamento: diaFechNum, cor: cor, beneficio: beneficio });
+      App.state.cartoes.push(Object.assign({ id: u.uid(), tipo: "conta" }, camposConta));
       data.saveState();
       closeSheet();
       App.ui.render();
@@ -367,7 +442,7 @@ window.App = window.App || {};
           recorrente: false, totalParcelas: 1, parcelaAtual: 1, grupoId: null, comprovante: comprovanteAtual
         }, overrides);
         // Pix e débito saem na hora: o que já tem data de hoje ou passada nasce pago.
-        if ((meio === "Pix" || meio === "Débito") && nl.vencimento <= u.todayISO()) nl.status = "pago";
+        if ((meio === "Pix" || meio === "Débito" || meio === "Vale alimentação") && nl.vencimento <= u.todayISO()) nl.status = "pago";
         App.state.lancamentos.push(nl);
       }
 
@@ -400,6 +475,13 @@ window.App = window.App || {};
       if (cartaoId && meio === "Cartão de crédito") {
         var cart = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
         if (cart) infos.push("Restante no " + cart.nome + ": " + u.fmtBRL.format(cart.limite - data.usadoCartao(cartaoId)));
+      }
+      if (cartaoId && meio === "Vale alimentação" && vencimento <= u.todayISO()) {
+        var contaAl = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
+        if (contaAl) {
+          var saldoAl = data.saldoAlimentacao(contaAl);
+          infos.push(saldoAl < 0 ? "Saldo insuficiente em " + contaAl.nome + ": " + u.fmtBRL.format(saldoAl) : "Saldo em " + contaAl.nome + ": " + u.fmtBRL.format(saldoAl));
+        }
       }
       if (!data.ehBeneficio(cartaoId)) infos.push("Ainda pode gastar no mês: " + u.fmtBRL.format(data.saldoDoMes(vencimento.slice(0, 7))));
       if (infos.length) setTimeout(function () { App.ui.toast(infos.join(" · ")); }, 1400);

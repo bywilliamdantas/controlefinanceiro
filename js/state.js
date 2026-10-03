@@ -14,9 +14,12 @@ window.App = window.App || {};
   var STORAGE_KEY_LEGADO = STORAGE_PREFIX; // formato antigo, sem perfil
   var PERFIS_KEY = "controle-financeiro:perfis";
   var CATEGORIAS_FIXAS = ["Alimentação", "Transporte", "Moradia", "Educação", "Lazer", "Outros"];
-  var MEIOS = ["Pix", "Débito", "Cartão de crédito", "Dinheiro", "Boleto"];
-  var TIPO_MEIO = { "Pix": "pix", "Débito": "debito", "Cartão de crédito": "credito" }; // meio -> tipo de conta
-  var TIPOS_CONTA = { credito: "Crédito", debito: "Débito", pix: "Pix" };
+  var MEIOS = ["Pix", "Débito", "Cartão de crédito", "Vale alimentação", "Dinheiro", "Boleto"];
+  // meio de pagamento -> recurso/tipo de conta que ele exige
+  var TIPO_MEIO = { "Pix": "pix", "Débito": "debito", "Cartão de crédito": "credito", "Vale alimentação": "alimentacao" };
+  // Tipos de conta: "conta" (com recursos Pix/Crédito/Débito, combináveis) e "alimentacao" (saldo com renovação).
+  var TIPOS_CONTA = { conta: "Conta", alimentacao: "Alimentação" };
+  var RECURSOS = { pix: "Pix", credito: "Crédito", debito: "Débito" };
   var CORES_CATEGORIA = ["#0E6B5C", "#B96A22", "#A83B32", "#5B7FBB", "#8B5FBF", "#3E8A72", "#C9944A", "#6B7280"];
   var CORES_CARTAO = ["#0E6B5C", "#8B5FBF", "#A83B32", "#B96A22", "#5B7FBB", "#3E8A72", "#C9944A", "#2F6690"];
 
@@ -110,9 +113,20 @@ window.App = window.App || {};
     };
   }
 
-  // Contas antigas (só cartão de crédito) não têm `tipo`: viram "credito".
+  // Migração de contas antigas: antes cada conta tinha UM tipo (credito|debito|pix,
+  // e sem tipo = crédito). Agora toda conta comum tem `tipo: "conta"` e uma lista
+  // `recursos` (qualquer combinação de pix/credito/debito). Contas "alimentacao"
+  // ficam como estão.
   function normalizarContas(arr) {
-    return arr.map(function (c) { return c.tipo ? c : Object.assign({}, c, { tipo: "credito" }); });
+    return arr.map(function (c) {
+      var n = Object.assign({}, c);
+      if (n.tipo === "alimentacao") return n;
+      if (!Array.isArray(n.recursos) || !n.recursos.length) {
+        n.recursos = [(n.tipo === "debito" || n.tipo === "pix") ? n.tipo : "credito"];
+      }
+      n.tipo = "conta";
+      return n;
+    });
   }
 
   function loadState() {
@@ -176,7 +190,8 @@ window.App = window.App || {};
   function ehBeneficio(cartaoId) {
     if (!cartaoId) return false;
     var c = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
-    return !!(c && c.beneficio);
+    // Conta Alimentação tem saldo próprio (vale): nunca desconta da renda.
+    return !!(c && (c.beneficio || c.tipo === "alimentacao"));
   }
   function despesasDoMes(mes) {
     return lancamentosDoMes(mes).reduce(function (s, l) { return ehBeneficio(l.cartaoId) ? s : s + l.valor; }, 0);
@@ -228,12 +243,14 @@ window.App = window.App || {};
     var primeiraAberta = {};
     App.state.lancamentos.forEach(function (l) {
       if (l.cartaoId !== cartaoId || l.status !== "aberto" || !l.recorrente) return;
+      if (l.meioPagamento && l.meioPagamento !== "Cartão de crédito") return; // conta combinada: Pix/débito não consomem limite
       var k = l.grupoId || l.id;
       if (!primeiraAberta[k] || l.vencimento < primeiraAberta[k]) primeiraAberta[k] = l.vencimento;
     });
     var recorrente = 0, parcelado = 0;
     App.state.lancamentos.forEach(function (l) {
       if (l.cartaoId !== cartaoId || l.status !== "aberto") return;
+      if (l.meioPagamento && l.meioPagamento !== "Cartão de crédito") return;
       if (l.recorrente) {
         var k = l.grupoId || l.id;
         var corte = proximo || primeiraAberta[k];
@@ -423,8 +440,85 @@ window.App = window.App || {};
   }
 
   // ---- Tipos de conta ----
-  function tipoConta(c) { return (c && c.tipo) || "credito"; }
-  function contasDoTipo(t) { return App.state.cartoes.filter(function (c) { return tipoConta(c) === t; }); }
+  function tipoConta(c) { return (c && c.tipo === "alimentacao") ? "alimentacao" : "conta"; }
+  function temRecurso(c, r) { return !!c && tipoConta(c) === "conta" && (c.recursos || []).indexOf(r) !== -1; }
+  // Contas que aceitam determinado meio: recurso pix/credito/debito, ou o tipo alimentacao.
+  function contasDoTipo(t) {
+    return App.state.cartoes.filter(function (c) { return t === "alimentacao" ? tipoConta(c) === "alimentacao" : temRecurso(c, t); });
+  }
+  function rotuloRecursos(c) {
+    if (tipoConta(c) === "alimentacao") return "Alimentação";
+    return (c.recursos || []).map(function (r) { return RECURSOS[r]; }).join(" · ");
+  }
+
+  // ---- Conta Alimentação ----
+  // O saldo é DERIVADO (nada é "descontado" à mão, então editar/excluir/desfazer
+  // lançamentos sempre mantém o saldo correto):
+  //   saldo = saldoBase − soma dos lançamentos da conta com data entre baseData e hoje.
+  // `saldoBase`/`baseData` são reposicionados quando o usuário ajusta o saldo ou
+  // quando uma renovação é aplicada. Lançamentos com data futura só descontam
+  // quando a data chega.
+  function isoDeDate(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function diaSeguinteISO(iso) {
+    var p = iso.split("-").map(Number);
+    return isoDeDate(new Date(p[0], p[1] - 1, p[2] + 1));
+  }
+  // Soma lançamentos da conta com vencimento em [de, ate) (ate = exclusivo).
+  function somaConta(id, de, ate) {
+    return App.state.lancamentos.reduce(function (s, l) {
+      return (l.cartaoId === id && l.vencimento >= de && l.vencimento < ate) ? s + l.valor : s;
+    }, 0);
+  }
+  function dataRenovacao(c, ano, mesIdx) {
+    return isoDeDate(new Date(ano, mesIdx, clampDia(ano, mesIdx, c.diaRenovacao)));
+  }
+  function saldoAlimentacao(c) {
+    if (!c || !c.baseData) return (c && c.saldoBase) || 0;
+    return c.saldoBase - somaConta(c.id, c.baseData, diaSeguinteISO(u.todayISO()));
+  }
+  // Define o saldo disponível ATUAL (ajuste manual ou criação da conta).
+  function definirSaldoAtual(c, valor) {
+    var hoje = u.todayISO();
+    // Lançamentos de hoje já estão refletidos no valor informado: soma de volta
+    // pra não descontá-los duas vezes.
+    c.saldoBase = valor + somaConta(c.id, hoje, diaSeguinteISO(hoje));
+    c.baseData = hoje;
+  }
+  function proximaRenovacao(c) {
+    if (!c || !c.diaRenovacao) return null;
+    var hoje = u.todayISO(), t = new Date(), ano = t.getFullYear(), mes = t.getMonth();
+    for (var i = 0; i < 3; i++) {
+      var d = dataRenovacao(c, ano, mes + i);
+      if (d > hoje) return d;
+    }
+    return null;
+  }
+  // Aplica as renovações cuja data já chegou (inclusive várias, se o app ficou
+  // meses sem abrir). Regras: "repor" = saldo vira o valor da renovação (sobra
+  // não acumula); "somar" = valor da renovação é somado ao que sobrou.
+  function aplicarRenovacoes() {
+    var hoje = u.todayISO(), mudou = false;
+    App.state.cartoes.forEach(function (c) {
+      if (tipoConta(c) !== "alimentacao" || !c.diaRenovacao || !(c.valorRenovacao > 0)) return;
+      if (!c.baseData) { c.baseData = hoje; c.saldoBase = c.saldoBase || 0; mudou = true; }
+      var p = c.baseData.split("-").map(Number), ano = p[0], mes = p[1] - 1, guard = 0;
+      while (guard++ < 600) {
+        var d = dataRenovacao(c, ano, mes);
+        if (d <= c.baseData) { mes++; continue; }
+        if (d > hoje) break;
+        var antes = c.saldoBase - somaConta(c.id, c.baseData, d);
+        c.saldoBase = c.modoRenovacao === "somar" ? antes + c.valorRenovacao : c.valorRenovacao;
+        c.baseData = d;
+        c.ultimaRenovacao = d;
+        mudou = true;
+        mes++;
+      }
+    });
+    if (mudou) saveState();
+    return mudou;
+  }
 
   // Gastos do mês por conta/cartão (lançamentos sem conta agrupam pelo meio de
   // pagamento). Cartões de benefício ficam fora, igual às despesas do mês.
@@ -480,8 +574,10 @@ window.App = window.App || {};
   }
 
   App.data = {
-    TIPO_MEIO: TIPO_MEIO, TIPOS_CONTA: TIPOS_CONTA, normalizarContas: normalizarContas,
-    tipoConta: tipoConta, contasDoTipo: contasDoTipo, gastosPorConta: gastosPorConta, gastoMesConta: gastoMesConta,
+    TIPO_MEIO: TIPO_MEIO, TIPOS_CONTA: TIPOS_CONTA, RECURSOS: RECURSOS, normalizarContas: normalizarContas,
+    tipoConta: tipoConta, temRecurso: temRecurso, rotuloRecursos: rotuloRecursos, contasDoTipo: contasDoTipo,
+    saldoAlimentacao: saldoAlimentacao, definirSaldoAtual: definirSaldoAtual,
+    proximaRenovacao: proximaRenovacao, aplicarRenovacoes: aplicarRenovacoes, gastosPorConta: gastosPorConta, gastoMesConta: gastoMesConta,
     saldoPoupanca: saldoPoupanca, saldoPoupancaTotal: saldoPoupancaTotal, extratoDoMes: extratoDoMes,
     STORAGE_KEY: STORAGE_PREFIX,
     CATEGORIAS_FIXAS: CATEGORIAS_FIXAS,

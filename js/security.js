@@ -29,26 +29,45 @@ window.App = window.App || {};
   // ---- Tela de bloqueio ----
   var pinBuffer = "";
   var onUnlockCb = null;
+  var travado = false;      // evita digitar durante a animação de erro/sucesso
+  var tecladoBound = false;
+
+  var ICON_BACKSPACE = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H9l-6 7 6 7h12a1 1 0 001-1V6a1 1 0 00-1-1z"/><line x1="12" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="12" y2="15"/></svg>';
 
   function renderLockScreen() {
     var root = document.getElementById("lockScreen");
+    root.classList.remove("unlocking");
     root.innerHTML =
-      '<div class="lock-icon">' + App.ICONS.lock.replace('viewBox="0 0 24 24"', 'viewBox="0 0 24 24" width="34" height="34"') + "</div>" +
-      "<h2>Digite seu PIN</h2>" +
-      '<div class="pin-dots" id="pinDots"></div>' +
-      '<div class="pin-error-msg" id="pinErrorMsg"></div>' +
+      '<div class="lock-top">' +
+        '<div class="lock-logo"><img src="assets/icon.png" alt=""></div>' +
+        "<h2>Controle Financeiro</h2>" +
+        '<p class="lock-sub">Digite seu PIN para entrar</p>' +
+        '<span class="lock-profile">' + App.utils.escapeHtml(App.data.perfilAtual()) + "</span>" +
+      "</div>" +
+      '<div class="lock-mid">' +
+        '<div class="pin-dots" id="pinDots" aria-label="PIN"></div>' +
+        '<div class="pin-error-msg" id="pinErrorMsg" role="alert"></div>' +
+      "</div>" +
       '<div class="pin-pad" id="pinPad">' +
-        [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button data-num="' + n + '">' + n + "</button>"; }).join("") +
-        '<button class="pin-clear" data-action="clear">limpar</button>' +
-        '<button data-num="0">0</button>' +
-        '<button class="pin-clear" data-action="back">⌫</button>' +
+        [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button data-num="' + n + '" aria-label="' + n + '">' + n + "</button>"; }).join("") +
+        '<span class="pin-spacer"></span>' +
+        '<button data-num="0" aria-label="0">0</button>' +
+        '<button class="pin-back" data-action="back" aria-label="Apagar">' + ICON_BACKSPACE + "</button>" +
       "</div>";
     updatePinDots();
     root.querySelectorAll("[data-num]").forEach(function (btn) {
       btn.addEventListener("click", function () { onPinDigit(btn.getAttribute("data-num")); });
     });
-    root.querySelector('[data-action="clear"]').addEventListener("click", function () { pinBuffer = ""; updatePinDots(); });
-    root.querySelector('[data-action="back"]').addEventListener("click", function () { pinBuffer = pinBuffer.slice(0, -1); updatePinDots(); });
+    root.querySelector('[data-action="back"]').addEventListener("click", onPinBack);
+    if (!tecladoBound) {
+      tecladoBound = true;
+      // Teclado físico (desktop): dígitos e Backspace.
+      document.addEventListener("keydown", function (e) {
+        if (document.getElementById("lockScreen").style.display === "none") return;
+        if (/^[0-9]$/.test(e.key)) onPinDigit(e.key);
+        else if (e.key === "Backspace") onPinBack();
+      });
+    }
   }
 
   function updatePinDots(errorState) {
@@ -57,31 +76,53 @@ window.App = window.App || {};
     var html = "";
     for (var i = 0; i < 4; i++) {
       var filled = i < pinBuffer.length;
-      html += '<div class="pin-dot' + (filled ? " filled" : "") + (errorState ? " error" : "") + '"></div>';
+      html += '<div class="pin-dot' + (filled ? " filled" : "") + (filled && i === pinBuffer.length - 1 && !errorState ? " pop" : "") + (errorState ? " error" : "") + '"></div>';
     }
     el.innerHTML = html;
   }
 
+  function onPinBack() {
+    if (travado) return;
+    pinBuffer = pinBuffer.slice(0, -1);
+    updatePinDots();
+  }
+
   function onPinDigit(n) {
-    if (pinBuffer.length >= 4) return;
+    if (travado || pinBuffer.length >= 4) return;
     pinBuffer += n;
     updatePinDots();
-    if (pinBuffer.length === 4) {
-      if (verificarPin(pinBuffer)) {
-        pinBuffer = "";
-        document.getElementById("lockScreen").style.display = "none";
+    if (App.utils.vibrar) App.utils.vibrar(8);
+    if (pinBuffer.length < 4) return;
+    var root = document.getElementById("lockScreen");
+    if (verificarPin(pinBuffer)) {
+      travado = true;
+      pinBuffer = "";
+      root.classList.add("unlocking");
+      setTimeout(function () {
+        root.style.display = "none";
+        root.classList.remove("unlocking");
+        travado = false;
         if (onUnlockCb) onUnlockCb();
-      } else {
-        updatePinDots(true);
-        document.getElementById("pinErrorMsg").textContent = "PIN incorreto, tente de novo";
-        setTimeout(function () { pinBuffer = ""; updatePinDots(); document.getElementById("pinErrorMsg").textContent = ""; }, 500);
-      }
+      }, 260);
+    } else {
+      travado = true;
+      updatePinDots(true);
+      if (App.utils.vibrar) App.utils.vibrar([30, 40, 30]);
+      document.getElementById("pinErrorMsg").textContent = "PIN incorreto, tente de novo";
+      setTimeout(function () {
+        pinBuffer = "";
+        travado = false;
+        updatePinDots();
+        var msg = document.getElementById("pinErrorMsg");
+        if (msg) msg.textContent = "";
+      }, 650);
     }
   }
 
   function mostrarLockScreen(onUnlock) {
     onUnlockCb = onUnlock;
     pinBuffer = "";
+    travado = false;
     var root = document.getElementById("lockScreen");
     root.style.display = "flex";
     renderLockScreen();
