@@ -300,7 +300,10 @@ window.App = window.App || {};
         dataInput.max = hoje;
         if (dataInput.value > hoje) dataInput.value = hoje;
         faturaHint.style.display = "block";
-        faturaHint.textContent = "O valor é descontado do saldo na hora, na data da transação.";
+        var cAl = cartaoSelecionado();
+        faturaHint.textContent = (cAl && cAl.baseData && dataInput.value && dataInput.value < cAl.baseData)
+          ? "Data anterior ao último ajuste/renovação do saldo (" + u.fmtDate(cAl.baseData) + "): será descontado do saldo atual mesmo assim."
+          : "O valor é descontado do saldo na hora, na data da transação.";
       } else {
         dataInput.removeAttribute("max");
         if (faturaHint.textContent.indexOf("descontado do saldo") !== -1) faturaHint.style.display = "none";
@@ -318,6 +321,7 @@ window.App = window.App || {};
       hint.textContent = "Saldo disponível em " + c.nome + ": " + u.fmtBRL.format(saldo) + (falta ? " — o valor é maior que o saldo" : "");
     }
     document.getElementById("fValor").addEventListener("input", atualizarSaldoHint);
+    dataInput.addEventListener("change", function () { if (ehAlim()) syncAlimentacao(); });
 
     // Quando o cartão selecionado tem dia de fechamento configurado, troca
     // pro fluxo "data da compra → vencimento calculado automaticamente",
@@ -356,6 +360,7 @@ window.App = window.App || {};
     // vencimento dele.
     cartaoSelect.addEventListener("change", function () {
       syncFechamento();
+      if (ehAlim()) syncAlimentacao();
       atualizarSaldoHint();
       if (!cartaoSelect.value) return;
       var c = cartaoSelecionado();
@@ -438,6 +443,11 @@ window.App = window.App || {};
       openCategoriaManageSheet(function () { closeSheet(); openLancamentoSheet(existing); });
     });
 
+    // Data anterior ao início do ciclo do saldo: guarda o ciclo para ainda descontar do saldo atual.
+    function marcarRetroativo(l, alim) {
+      var c = alim ? data.contaPorId(l.cartaoId) : null;
+      if (c && c.baseData && l.vencimento < c.baseData) l.retroativoEm = c.baseData; else delete l.retroativoEm;
+    }
     document.getElementById("fSave").addEventListener("click", function () {
       clearAllErrors([["fTitulo", "errTitulo"], ["fValor", "errValor"], ["fData", "errData"], ["fCartao", "errCartao"]]);
       var titulo = document.getElementById("fTitulo").value.trim();
@@ -455,10 +465,6 @@ window.App = window.App || {};
         if (!contaAlim) {
           setFieldError("fCartao", "errCartao", data.contasDoTipo("alimentacao").length ? "Escolha a conta de alimentação para descontar o valor" : "Cadastre uma conta do tipo Alimentação na aba Contas");
           ok = false;
-        } else if (vencimento && contaAlim.baseData && vencimento < contaAlim.baseData) {
-          // O saldo é calculado a partir do último ajuste/renovação: antes disso o valor já está refletido nele.
-          setFieldError("fData", "errData", "Data anterior ao último ajuste/renovação do saldo (" + u.fmtDate(contaAlim.baseData) + "), que já inclui esse período. Use " + u.fmtDate(contaAlim.baseData) + " ou depois.");
-          ok = false;
         }
       }
       if (!ok) return;
@@ -475,6 +481,7 @@ window.App = window.App || {};
           titulo: titulo, valor: valor, categoria: categoria,
           vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId, comprovante: comprovanteAtual
         });
+        marcarRetroativo(existing, alimSave);
         if (alimSave) existing.status = "pago"; // desconta na hora, nunca fica "em aberto"
         else if (eraTransacao) existing.status = ((meio === "Pix" || meio === "Débito") && vencimento <= u.todayISO()) ? "pago" : "aberto";
         var prop = document.getElementById("fPropagar");
@@ -503,6 +510,7 @@ window.App = window.App || {};
         }, overrides);
         // Pix e débito saem na hora: o que já tem data de hoje ou passada nasce pago.
         if (alimSave || ((meio === "Pix" || meio === "Débito") && nl.vencimento <= u.todayISO())) nl.status = "pago";
+        marcarRetroativo(nl, alimSave);
         App.state.lancamentos.push(nl);
       }
 

@@ -502,9 +502,16 @@ window.App = window.App || {};
     return isoDeDate(new Date(p[0], p[1] - 1, p[2] + 1));
   }
   // Soma lançamentos da conta com vencimento em [de, ate) (ate = exclusivo).
+  // Lançamentos retroativos (data anterior ao início do ciclo atual do saldo, ex.:
+  // um gasto do dia 01 registrado depois) trazem `retroativoEm` = início do ciclo
+  // em que foram lançados e descontam do saldo desse ciclo. Ao renovar ou ajustar
+  // o saldo, o ciclo muda e eles deixam de contar (o novo saldo já os reflete).
   function somaConta(id, de, ate) {
     return App.state.lancamentos.reduce(function (s, l) {
-      return (l.cartaoId === id && l.vencimento >= de && l.vencimento < ate) ? s + l.valor : s;
+      if (l.cartaoId !== id) return s;
+      var noPeriodo = l.vencimento >= de && l.vencimento < ate;
+      var retro = !!l.retroativoEm && l.retroativoEm === de && l.vencimento < de;
+      return (noPeriodo || retro) ? s + l.valor : s;
     }, 0);
   }
   function dataRenovacao(c, ano, mesIdx) {
@@ -517,6 +524,8 @@ window.App = window.App || {};
   // Define o saldo disponível ATUAL (ajuste manual ou criação da conta).
   function definirSaldoAtual(c, valor) {
     var hoje = u.todayISO();
+    // O valor informado é o saldo real agora: retroativos anteriores já estão nele.
+    App.state.lancamentos.forEach(function (l) { if (l.cartaoId === c.id) delete l.retroativoEm; });
     // Lançamentos de hoje já estão refletidos no valor informado: soma de volta
     // pra não descontá-los duas vezes.
     c.saldoBase = valor + somaConta(c.id, hoje, diaSeguinteISO(hoje));
