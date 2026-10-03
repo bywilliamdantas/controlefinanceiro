@@ -71,6 +71,8 @@ window.App = window.App || {};
           poupancas: dados.poupancas || [],
           movPoupanca: dados.movPoupanca || [],
           lancamentos: dados.lancamentos,
+          entradas: dados.entradas || [],
+          versaoSaldo: dados.versaoSaldo || 0, // backup antigo (0): migrarEstado não deixa o histórico negativar as contas
           receitasExtras: dados.receitasExtras || [],
           categoriasCustom: dados.categoriasCustom || [],
           metas: dados.metas || {},
@@ -78,6 +80,7 @@ window.App = window.App || {};
           pinHash: dados.pinHash || null,
           prefs: Object.assign(base.prefs, dados.prefs || {})
         });
+        App.data.migrarEstado(App.state);
         App.data.saveState();
         App.ui.render();
         App.ui.toast("Backup importado");

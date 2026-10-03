@@ -211,6 +211,7 @@ window.App = window.App || {};
       '<div class="sheet-backdrop" id="backdrop">' +
         '<div class="sheet">' +
           '<div class="sheet-head"><h2>' + (editMode ? "Editar lançamento" : "Novo lançamento") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+          (editMode ? "" : segmentoLanc("saida")) +
           tipoInfo +
           '<label class="field">Descrição<input id="fTitulo" type="text" placeholder="Ex: Supermercado" autocomplete="off" value="' + (editMode ? u.escapeHtml(existing.titulo) : "") + '">' +
             '<span class="field-error-msg" id="errTitulo"></span>' +
@@ -221,15 +222,16 @@ window.App = window.App || {};
               '<span class="field-error-msg" id="errValor"></span></label>' +
             '<label class="field" id="dataCompraWrap" style="display:none">Data da compra<input id="fDataCompra" type="date" value="' + u.todayISO() + '"></label>' +
           "</div>" +
-          '<label class="field" id="vencimentoWrap">Vencimento<input id="fData" type="date" value="' + (editMode ? existing.vencimento : new Date().toISOString().slice(0, 10)) + '">' +
+          '<label class="field" id="vencimentoWrap"><span id="dataLabel">Vencimento</span><input id="fData" type="date" value="' + (editMode ? existing.vencimento : new Date().toISOString().slice(0, 10)) + '">' +
             '<span class="field-error-msg" id="errData"></span>' +
             '<span class="fatura-hint" id="faturaHint" style="display:none"></span></label>' +
           '<label class="field">Categoria<select id="fCategoria">' + catOptions + "</select>" +
             '<button type="button" class="meta-edit-link" id="btnGerenciarCategorias" style="margin-top:6px">gerenciar categorias</button></label>' +
           '<label class="field">Pagamento<select id="fMeio">' + meioOptions + "</select></label>" +
-          '<div id="cartaoWrap" style="display:none"><label class="field">Conta<select id="fCartao"><option value="">Nenhum</option>' + cartaoOptions + "</select></label></div>" +
+          '<div id="cartaoWrap" style="display:none"><label class="field">Conta<select id="fCartao"><option value="">Nenhum</option>' + cartaoOptions + "</select>" +
+            '<span class="saldo-hint" id="saldoHint" style="display:none"></span></label></div>' +
           (editMode ? "" :
-            '<label class="field">Repetição<select id="fTipo">' +
+            '<div id="repeticaoWrap"><label class="field">Repetição<select id="fTipo">' +
               '<option value="unico">Único</option>' +
               '<option value="recorrente">Recorrente (repete todo mês)</option>' +
               '<option value="parcelado">Parcelado</option>' +
@@ -239,7 +241,7 @@ window.App = window.App || {};
             "</div>" +
             '<div id="parceladoWrap" class="tipo-fields" style="display:none">' +
               '<label class="field" style="margin-bottom:0">Número de parcelas (valor acima = valor de cada parcela)<input id="fParcelas" type="number" min="2" max="60" value="2"></label>' +
-            "</div>"
+            "</div></div>"
           ) +
           (editMode && existing.grupoId && App.state.lancamentos.some(function (x) { return x.grupoId === existing.grupoId && x.vencimento > existing.vencimento; })
             ? '<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="fPropagar" type="checkbox" style="width:auto"> Aplicar também aos próximos meses deste grupo (valor, categoria, pagamento e conta)</label>'
@@ -256,6 +258,7 @@ window.App = window.App || {};
         "</div>" +
       "</div>";
     bindBackdropClose(root);
+    bindSegmentoLanc(function () { openEntradaSheet(); });
 
     var meioSelect = document.getElementById("fMeio");
     var cartaoWrap = document.getElementById("cartaoWrap");
@@ -277,8 +280,40 @@ window.App = window.App || {};
       }).join("");
       cartaoSelect.value = sel;
     }
-    meioSelect.addEventListener("change", function () { syncCartaoWrap(); syncFechamento(); });
+    meioSelect.addEventListener("change", function () { syncCartaoWrap(); syncFechamento(); syncAlimentacao(); atualizarSaldoHint(); });
     syncCartaoWrap();
+
+    // Alimentação: o valor sai do saldo na hora da transação — não há vencimento,
+    // nem repetição, nem "conta a vencer". O campo vira "Data da transação" e
+    // não aceita data futura.
+    function ehAlim() { return meioSelect.value === "Vale alimentação"; }
+    function syncAlimentacao() {
+      var alim = ehAlim(), hoje = u.todayISO();
+      document.getElementById("dataLabel").textContent = alim ? "Data da transação" : "Vencimento";
+      var rep = document.getElementById("repeticaoWrap");
+      if (rep) rep.style.display = alim ? "none" : "";
+      if (alim) {
+        dataInput.max = hoje;
+        if (dataInput.value > hoje) dataInput.value = hoje;
+        faturaHint.style.display = "block";
+        faturaHint.textContent = "O valor é descontado do saldo na hora, na data da transação.";
+      } else {
+        dataInput.removeAttribute("max");
+        if (faturaHint.textContent.indexOf("descontado do saldo") !== -1) faturaHint.style.display = "none";
+      }
+    }
+    // Saldo da conta escolhida (Pix/Débito/Alimentação) — separado do limite do crédito.
+    function atualizarSaldoHint() {
+      var hint = document.getElementById("saldoHint"), m = meioSelect.value;
+      var c = cartaoSelecionado();
+      if (editMode || !c || (m !== "Pix" && m !== "Débito" && m !== "Vale alimentação")) { hint.style.display = "none"; return; }
+      var saldo = data.saldoConta(c), v = parseFloat(document.getElementById("fValor").value) || 0;
+      var falta = v > saldo + 0.004;
+      hint.className = "saldo-hint" + (falta ? " warn" : "");
+      hint.style.display = "block";
+      hint.textContent = "Saldo disponível em " + c.nome + ": " + u.fmtBRL.format(saldo) + (falta ? " — o valor é maior que o saldo" : "");
+    }
+    document.getElementById("fValor").addEventListener("input", atualizarSaldoHint);
 
     // Quando o cartão selecionado tem dia de fechamento configurado, troca
     // pro fluxo "data da compra → vencimento calculado automaticamente",
@@ -317,6 +352,7 @@ window.App = window.App || {};
     // vencimento dele.
     cartaoSelect.addEventListener("change", function () {
       syncFechamento();
+      atualizarSaldoHint();
       if (!cartaoSelect.value) return;
       var c = cartaoSelecionado();
       if (!editMode && c && c.diaFechamento) return; // já tratado por syncFechamento/recalcularFatura
@@ -324,6 +360,8 @@ window.App = window.App || {};
       if (proxima) dataInput.value = proxima;
     });
     syncFechamento();
+    syncAlimentacao();
+    atualizarSaldoHint();
 
     var tipoSelect = document.getElementById("fTipo");
     if (tipoSelect) {
@@ -405,7 +443,9 @@ window.App = window.App || {};
       var ok = true;
       if (!titulo) { setFieldError("fTitulo", "errTitulo", "Dê uma descrição pro lançamento"); ok = false; }
       if (valorRaw === "" || isNaN(valor) || valor <= 0) { setFieldError("fValor", "errValor", "Informe um valor maior que zero"); ok = false; }
-      if (!vencimento) { setFieldError("fData", "errData", "Escolha uma data de vencimento"); ok = false; }
+      var alimSave = ehAlim();
+      if (!vencimento) { setFieldError("fData", "errData", alimSave ? "Escolha a data da transação" : "Escolha uma data de vencimento"); ok = false; }
+      else if (alimSave && vencimento > u.todayISO()) { setFieldError("fData", "errData", "A data da transação não pode ser futura"); ok = false; }
       if (!ok) return;
 
       var meio = meioSelect.value;
@@ -413,10 +453,15 @@ window.App = window.App || {};
       var categoria = categoriaSelect.value;
 
       if (editMode) {
+        var eraTransacao = data.ehTransacaoImediata(existing);
+        // Mudou o meio ou a conta: o lançamento passa a valer para o saldo da nova conta.
+        if (existing.meioPagamento !== meio || existing.cartaoId !== cartaoId) delete existing.semSaldo;
         Object.assign(existing, {
           titulo: titulo, valor: valor, categoria: categoria,
           vencimento: vencimento, meioPagamento: meio, cartaoId: cartaoId, comprovante: comprovanteAtual
         });
+        if (alimSave) existing.status = "pago"; // desconta na hora, nunca fica "em aberto"
+        else if (eraTransacao) existing.status = ((meio === "Pix" || meio === "Débito") && vencimento <= u.todayISO()) ? "pago" : "aberto";
         var prop = document.getElementById("fPropagar");
         if (prop && prop.checked) {
           var ref = existing.vencimento;
@@ -433,7 +478,7 @@ window.App = window.App || {};
         return;
       }
 
-      var tipo = tipoSelect.value;
+      var tipo = alimSave ? "unico" : tipoSelect.value;
 
       function addLancamento(overrides) {
         var nl = Object.assign({
@@ -442,7 +487,7 @@ window.App = window.App || {};
           recorrente: false, totalParcelas: 1, parcelaAtual: 1, grupoId: null, comprovante: comprovanteAtual
         }, overrides);
         // Pix e débito saem na hora: o que já tem data de hoje ou passada nasce pago.
-        if ((meio === "Pix" || meio === "Débito" || meio === "Vale alimentação") && nl.vencimento <= u.todayISO()) nl.status = "pago";
+        if (alimSave || ((meio === "Pix" || meio === "Débito") && nl.vencimento <= u.todayISO())) nl.status = "pago";
         App.state.lancamentos.push(nl);
       }
 
@@ -483,8 +528,98 @@ window.App = window.App || {};
           infos.push(saldoAl < 0 ? "Saldo insuficiente em " + contaAl.nome + ": " + u.fmtBRL.format(saldoAl) : "Saldo em " + contaAl.nome + ": " + u.fmtBRL.format(saldoAl));
         }
       }
+      if (cartaoId && (meio === "Pix" || meio === "Débito") && vencimento <= u.todayISO()) {
+        var contaPd = App.state.cartoes.filter(function (x) { return x.id === cartaoId; })[0];
+        if (contaPd) {
+          var saldoPd = data.saldoConta(contaPd);
+          infos.push(saldoPd < 0 ? "Saldo insuficiente em " + contaPd.nome + ": " + u.fmtBRL.format(saldoPd) : "Saldo em " + contaPd.nome + ": " + u.fmtBRL.format(saldoPd));
+        }
+      }
       if (!data.ehBeneficio(cartaoId)) infos.push("Ainda pode gastar no mês: " + u.fmtBRL.format(data.saldoDoMes(vencimento.slice(0, 7))));
       if (infos.length) setTimeout(function () { App.ui.toast(infos.join(" · ")); }, 1400);
+    });
+  }
+
+  // ---- Segmento Saída | Entrada (topo do "Novo lançamento") ----
+  function segmentoLanc(ativo) {
+    return '<div class="seg" id="segLanc">' +
+      '<button type="button" class="seg-btn' + (ativo === "saida" ? " active" : "") + '" data-seg="saida">Saída</button>' +
+      '<button type="button" class="seg-btn' + (ativo === "entrada" ? " active" : "") + '" data-seg="entrada">Entrada (saldo)</button></div>';
+  }
+  function bindSegmentoLanc(onEntrada, onSaida) {
+    var seg = document.getElementById("segLanc");
+    if (!seg) return;
+    seg.querySelector('[data-seg="entrada"]').addEventListener("click", function () { if (onEntrada) onEntrada(); });
+    seg.querySelector('[data-seg="saida"]').addEventListener("click", function () { if (onSaida) onSaida(); });
+  }
+
+  // ---- Entrada: adicionar saldo a uma conta ----
+  // Vira um lançamento de ENTRADA (aparece na lista de Lançamentos) e fica como
+  // saldo disponível da conta para Pix/Débito. Não mexe no limite do crédito.
+  function openEntradaSheet(existing, contaIdPre) {
+    var ed = !!existing, root = document.getElementById("modalRoot"), hoje = u.todayISO();
+    var contas = data.contasComSaldo().slice();
+    if (ed) { var cx = data.contaPorId(existing.contaId); if (cx && contas.indexOf(cx) === -1) contas.push(cx); }
+    if (!contas.length) { App.ui.toast("Cadastre uma conta com Pix ou Débito para adicionar saldo"); return; }
+    var contaSel = ed ? existing.contaId : (contaIdPre && contas.some(function (c) { return c.id === contaIdPre; }) ? contaIdPre : contas[0].id);
+    root.innerHTML =
+      '<div class="sheet-backdrop" id="backdrop"><div class="sheet">' +
+        '<div class="sheet-head"><h2>' + (ed ? "Editar entrada" : "Adicionar saldo") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
+        (ed ? "" : segmentoLanc("entrada")) +
+        '<label class="field">Conta<select id="eConta">' + contas.map(function (c) {
+          return '<option value="' + c.id + '"' + (c.id === contaSel ? " selected" : "") + ">" + u.escapeHtml(c.nome) + "</option>";
+        }).join("") + "</select>" +
+          '<span class="field-error-msg" id="errEConta"></span></label>' +
+        '<div class="row2">' +
+          '<label class="field">Valor<input id="eValor" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" value="' + (ed ? existing.valor : "") + '"><span class="field-error-msg" id="errEValor"></span></label>' +
+          '<label class="field">Data<input id="eData" type="date" value="' + (ed ? existing.data : hoje) + '"><span class="field-error-msg" id="errEData"></span></label>' +
+        "</div>" +
+        '<label class="field">Descrição (opcional)<input id="eDesc" type="text" placeholder="Ex: Transferência, salário, reembolso" value="' + (ed ? u.escapeHtml(existing.descricao || "") : "") + '"></label>' +
+        '<p class="saldo-hint" id="eHint" style="margin:0 0 12px"></p>' +
+        '<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 4px">O valor fica como <b>saldo disponível</b> da conta, para usar em Pix ou Débito. O limite do cartão de crédito não muda.</p>' +
+        '<div class="btn-row"><button class="btn btn-primary" id="eSave">' + (ed ? "Salvar alterações" : "Adicionar saldo") + "</button></div></div></div>";
+    bindBackdropClose(root);
+    bindSegmentoLanc(null, function () { openLancamentoSheet(); });
+
+    function contrib(e) { return e.data <= hoje ? e.valor : 0; }
+    // Saldo da conta sem a própria entrada (quando está editando) e com o novo valor.
+    function projetar() {
+      var c = data.contaPorId(document.getElementById("eConta").value);
+      if (!c) return null;
+      var atual = data.saldoConta(c);
+      var base = atual - ((ed && existing.contaId === c.id) ? contrib(existing) : 0);
+      var v = parseFloat(document.getElementById("eValor").value) || 0, d = document.getElementById("eData").value || hoje;
+      return { conta: c, atual: atual, depois: data.arred(base + (d <= hoje ? v : 0)), futuro: d > hoje, data: d };
+    }
+    function atualizarHint() {
+      var pj = projetar(), el = document.getElementById("eHint");
+      if (!pj) { el.textContent = ""; return; }
+      el.textContent = "Saldo atual em " + pj.conta.nome + ": " + u.fmtBRL.format(pj.atual) +
+        (pj.futuro ? " · este valor só entra no saldo em " + u.fmtDate(pj.data) : " · após: " + u.fmtBRL.format(pj.depois));
+    }
+    ["eConta", "eValor", "eData"].forEach(function (id) { document.getElementById(id).addEventListener("input", atualizarHint); document.getElementById(id).addEventListener("change", atualizarHint); });
+    atualizarHint();
+
+    document.getElementById("eSave").addEventListener("click", function () {
+      clearAllErrors([["eConta", "errEConta"], ["eValor", "errEValor"], ["eData", "errEData"]]);
+      var contaId = document.getElementById("eConta").value, valorRaw = document.getElementById("eValor").value;
+      var valor = parseFloat(valorRaw), dt = document.getElementById("eData").value, ok = true;
+      if (!contaId) { setFieldError("eConta", "errEConta", "Escolha a conta"); ok = false; }
+      if (valorRaw === "" || isNaN(valor) || valor <= 0) { setFieldError("eValor", "errEValor", "Informe um valor maior que zero"); ok = false; }
+      if (!dt) { setFieldError("eData", "errEData", "Escolha a data"); ok = false; }
+      if (!ok) return;
+      var desc = document.getElementById("eDesc").value.trim();
+      if (ed) {
+        var pj = projetar();
+        if (pj && pj.depois < -0.004 && pj.depois < pj.atual && !window.confirm("O saldo de " + pj.conta.nome + " ficará negativo (" + u.fmtBRL.format(pj.depois) + "). Salvar mesmo assim?")) return;
+        Object.assign(existing, { contaId: contaId, valor: valor, data: dt, descricao: desc });
+      } else {
+        App.state.entradas.push({ id: u.uid(), contaId: contaId, valor: valor, data: dt, descricao: desc });
+      }
+      data.saveState(); closeSheet(); App.ui.render();
+      var cc = data.contaPorId(contaId);
+      App.ui.toastSuccess(ed ? "Entrada atualizada" : "Saldo adicionado em " + (cc ? cc.nome : "conta"));
+      if (!ed && cc && dt <= hoje) setTimeout(function () { App.ui.toast("Saldo disponível em " + cc.nome + ": " + u.fmtBRL.format(data.saldoConta(cc))); }, 1400);
     });
   }
 
@@ -516,7 +651,7 @@ window.App = window.App || {};
       App.state.lancamentos.forEach(function (l) {
         if (ids.indexOf(l.id) === -1) return;
         if (cat) l.categoria = cat;
-        if (status) l.status = status;
+        if (status && !(status === "aberto" && data.ehTransacaoImediata(l))) l.status = status; // Alimentação nunca fica em aberto
       });
       data.saveState();
       closeSheet();
@@ -837,26 +972,83 @@ window.App = window.App || {};
     });
   }
 
+  // Depósito = atribui valor de uma conta à poupança (sai do saldo da conta).
+  // Retirada = devolve valor da poupança para uma conta (entra no saldo dela).
+  // Rendimento = acrescenta à poupança, sem mexer em saldo de conta.
   function openMovPoupancaSheet(poupancaId, tipoInicial) {
     var p = App.state.poupancas.filter(function (x) { return x.id === poupancaId; })[0];
     if (!p) return;
-    var root = document.getElementById("modalRoot");
+    var root = document.getElementById("modalRoot"), hoje = u.todayISO(), SEM = "__sem__";
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop"><div class="sheet">' +
         '<div class="sheet-head"><h2>' + u.escapeHtml(p.nome) + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
-        '<label class="field">Movimentação<select id="mTipo"><option value="deposito">Depósito</option><option value="retirada">Retirada</option><option value="rendimento">Rendimento</option></select></label>' +
+        '<label class="field">Movimentação<select id="mTipo"><option value="deposito">Guardar (conta → poupança)</option><option value="retirada">Retirar (poupança → conta)</option><option value="rendimento">Rendimento</option></select></label>' +
+        '<label class="field"><span id="mContaLabel">Conta</span><select id="mConta"></select><span class="saldo-hint" id="mHint"></span></label>' +
         '<div class="row2"><label class="field">Valor<input id="mValor" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00"><span class="field-error-msg" id="errMValor"></span></label>' +
-        '<label class="field">Data<input id="mData" type="date" value="' + u.todayISO() + '"></label></div>' +
+        '<label class="field">Data<input id="mData" type="date" value="' + hoje + '"><span class="field-error-msg" id="errMData"></span></label></div>' +
         '<label class="field">Observação (opcional)<input id="mDesc" type="text"></label>' +
         '<div class="btn-row"><button class="btn btn-primary" id="mSave">Salvar</button></div></div></div>';
     bindBackdropClose(root);
-    document.getElementById("mTipo").value = tipoInicial || "deposito";
+    var tipoEl = document.getElementById("mTipo"), contaEl = document.getElementById("mConta");
+    tipoEl.value = tipoInicial || "deposito";
+
+    // Opções de conta conforme o tipo, já com o valor disponível de cada uma.
+    function opcoes(tipo) {
+      if (tipo === "deposito") {
+        return data.contasComSaldo().map(function (c) { return { id: c.id, label: c.nome + " · saldo " + u.fmtBRL.format(data.saldoConta(c)) }; });
+      }
+      if (tipo === "retirada") {
+        var o = App.state.cartoes.filter(function (c) { return data.poupadoNaConta(p.id, c.id) > 0.004; })
+          .map(function (c) { return { id: c.id, label: c.nome + " · guardado " + u.fmtBRL.format(data.poupadoNaConta(p.id, c.id)) }; });
+        var sem = data.poupadoSemConta(p.id);
+        if (sem > 0.004) o.push({ id: SEM, label: "Sem conta (valor antigo/rendimento) · " + u.fmtBRL.format(sem) });
+        return o;
+      }
+      return [{ id: SEM, label: "Sem conta específica" }].concat(data.contasComSaldo().map(function (c) { return { id: c.id, label: c.nome }; }));
+    }
+    function montar() {
+      var tipo = tipoEl.value, o = opcoes(tipo), prev = contaEl.value;
+      document.getElementById("mContaLabel").textContent = tipo === "deposito" ? "Conta de origem (de onde sai o valor)" : tipo === "retirada" ? "Conta de destino (para onde vai o valor)" : "Conta do rendimento (opcional)";
+      contaEl.innerHTML = o.map(function (x) { return '<option value="' + x.id + '">' + u.escapeHtml(x.label) + "</option>"; }).join("");
+      if (o.some(function (x) { return x.id === prev; })) contaEl.value = prev;
+      contaEl.disabled = !o.length;
+      var dEl = document.getElementById("mData");
+      if (tipo === "rendimento") dEl.removeAttribute("max"); else { dEl.max = hoje; if (dEl.value > hoje) dEl.value = hoje; }
+      hint();
+    }
+    function hint() {
+      var tipo = tipoEl.value, el = document.getElementById("mHint");
+      el.className = "saldo-hint";
+      if (tipo === "rendimento") { el.textContent = "Soma ao valor guardado da conta escolhida, sem alterar o saldo dela."; return; }
+      if (!contaEl.value) {
+        el.className = "saldo-hint warn";
+        el.textContent = tipo === "deposito"
+          ? "Nenhuma conta com saldo. Cadastre uma conta com Pix/Débito e use \"Adicionar saldo\" em Lançamentos."
+          : "Esta poupança não tem valores guardados para retirar.";
+        return;
+      }
+      if (tipo === "deposito") el.textContent = "Disponível para guardar: " + u.fmtBRL.format(data.saldoConta(data.contaPorId(contaEl.value)));
+      else el.textContent = "Disponível para retirar: " + u.fmtBRL.format(contaEl.value === SEM ? data.poupadoSemConta(p.id) : data.poupadoNaConta(p.id, contaEl.value));
+    }
+    tipoEl.addEventListener("change", montar);
+    contaEl.addEventListener("change", hint);
+    montar();
+
     document.getElementById("mSave").addEventListener("click", function () {
-      var valor = parseFloat(document.getElementById("mValor").value), tipo = document.getElementById("mTipo").value;
+      clearAllErrors([["mValor", "errMValor"], ["mData", "errMData"]]);
+      var tipo = tipoEl.value, valor = parseFloat(document.getElementById("mValor").value), dt = document.getElementById("mData").value || hoje;
       if (isNaN(valor) || valor <= 0) { setFieldError("mValor", "errMValor", "Informe um valor maior que zero"); return; }
-      if (tipo === "retirada" && valor > data.saldoPoupanca(p.id) && !window.confirm("A retirada é maior que o saldo atual. Registrar mesmo assim?")) return;
-      App.state.movPoupanca.push({ id: u.uid(), poupancaId: p.id, tipo: tipo, valor: valor, data: document.getElementById("mData").value || u.todayISO(), descricao: document.getElementById("mDesc").value.trim() });
-      data.saveState(); closeSheet(); App.ui.render(); App.ui.toastSuccess("Movimentação registrada");
+      if (tipo !== "rendimento" && dt > hoje) { setFieldError("mData", "errMData", "Para guardar ou retirar, a data não pode ser futura"); return; }
+      var contaId = contaEl.value === SEM ? null : (contaEl.value || null);
+      if (tipo !== "rendimento") {
+        if (!contaEl.value) { setFieldError("mValor", "errMValor", tipo === "deposito" ? "Escolha uma conta com saldo" : "Não há valor para retirar"); return; }
+        var erro = data.validarMovPoupanca(p.id, tipo, contaId, valor);
+        if (erro) { setFieldError("mValor", "errMValor", erro); return; }
+      }
+      App.state.movPoupanca.push({ id: u.uid(), poupancaId: p.id, contaId: contaId, tipo: tipo, valor: valor, data: dt, descricao: document.getElementById("mDesc").value.trim() });
+      data.saveState(); closeSheet(); App.ui.render();
+      var cn = data.contaPorId(contaId);
+      App.ui.toastSuccess(tipo === "deposito" ? "Guardado em " + p.nome + (cn ? " · saiu de " + cn.nome : "") : tipo === "retirada" ? "Retirado" + (cn ? " · voltou para " + cn.nome : "") : "Rendimento registrado");
     });
   }
 
@@ -866,11 +1058,19 @@ window.App = window.App || {};
     var l = item.l;
     if (l) {
       var c = App.state.cartoes.filter(function (x) { return x.id === l.cartaoId; })[0];
-      rows.push(["Categoria", l.categoria], ["Pagamento", l.meioPagamento || "—"], ["Conta", c ? c.nome : "—"], ["Status", l.status === "pago" ? "Pago" : "Em aberto"]);
+      var imediata = data.ehTransacaoImediata(l); // Alimentação: sem vencimento, desconta na hora
+      if (imediata) rows[1][0] = "Data da transação";
+      rows.push(["Categoria", l.categoria], ["Pagamento", l.meioPagamento || "—"], ["Conta", c ? c.nome : "—"], ["Status", imediata ? "Descontado do saldo" : (l.status === "pago" ? "Pago" : "Em aberto")]);
       if (l.totalParcelas > 1) rows.push(["Parcela", l.parcelaAtual + "/" + l.totalParcelas]);
       else if (l.recorrente) rows.push(["Repetição", "Recorrente (mensal)"]);
       if (item.beneficio) rows.push(["Obs.", "Cartão de benefício — não desconta da renda"]);
-    } else if (item.mov && item.mov.descricao) rows.push(["Observação", item.mov.descricao]);
+    } else if (item.e) {
+      rows.push(["Tipo", "Saldo adicionado"], ["Conta", item.contaNome || "—"]);
+    } else if (item.mov) {
+      var cm = data.contaPorId(item.mov.contaId);
+      rows.push(["Conta", cm ? cm.nome : "—"]);
+      if (item.mov.descricao) rows.push(["Observação", item.mov.descricao]);
+    }
     var root = document.getElementById("modalRoot");
     root.innerHTML =
       '<div class="sheet-backdrop" id="backdrop"><div class="sheet">' +
@@ -904,7 +1104,7 @@ window.App = window.App || {};
   App.sheets = {
     openExcluirGrupoSheet: openExcluirGrupoSheet,
     openPoupancaSheet: openPoupancaSheet, openMovPoupancaSheet: openMovPoupancaSheet, openExtratoDetalheSheet: openExtratoDetalheSheet,
-    openCartaoSheet: openCartaoSheet, openLancamentoSheet: openLancamentoSheet,
+    openCartaoSheet: openCartaoSheet, openLancamentoSheet: openLancamentoSheet, openEntradaSheet: openEntradaSheet,
     openCategoriaManageSheet: openCategoriaManageSheet, openMetaSheet: openMetaSheet,
     openReceitaExtraSheet: openReceitaExtraSheet, openPinConfigSheet: openPinConfigSheet,
     openBulkEditSheet: openBulkEditSheet, openMetaCategoriaSheet: openMetaCategoriaSheet,

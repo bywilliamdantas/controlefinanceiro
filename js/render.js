@@ -94,12 +94,14 @@ window.App = window.App || {};
     document.querySelectorAll(".lanc-swipe").forEach(function (wrap) {
       var item = wrap.querySelector(".lanc-item");
       var startX = 0, startY = 0, baseX = 0, dragging = false, moved = false;
-      function limitar(x) { return Math.min(PAY_WIDTH, Math.max(-ACTIONS_WIDTH, x)); }
+      // Transação de Alimentação já foi descontada: não há "pagar/reabrir" pra revelar.
+      var payW = wrap.classList.contains("no-pay") ? 0 : PAY_WIDTH;
+      function limitar(x) { return Math.min(payW, Math.max(-ACTIONS_WIDTH, x)); }
       item.addEventListener("pointerdown", function (e) {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         dragging = true; moved = false;
         startX = e.clientX; startY = e.clientY;
-        baseX = wrap.classList.contains("swiped") ? -ACTIONS_WIDTH : (wrap.classList.contains("swiped-pay") ? PAY_WIDTH : 0);
+        baseX = wrap.classList.contains("swiped") ? -ACTIONS_WIDTH : (wrap.classList.contains("swiped-pay") ? payW : 0);
         item.style.transition = "none";
       });
       item.addEventListener("pointermove", function (e) {
@@ -130,8 +132,8 @@ window.App = window.App || {};
           wrap.classList.add("swiped");
           openWrap = wrap;
           u.vibrar(10);
-        } else if (finalX > PAY_WIDTH / 2) {
-          item.style.transform = "translateX(" + PAY_WIDTH + "px)";
+        } else if (payW > 0 && finalX > payW / 2) {
+          item.style.transform = "translateX(" + payW + "px)";
           wrap.classList.add("swiped-pay");
           openWrap = wrap;
           u.vibrar(10);
@@ -342,6 +344,43 @@ window.App = window.App || {};
     );
   }
 
+  // Detalhe do card "Saldo": por conta, o saldo disponível (Pix/Débito/Alimentação)
+  // SEPARADO do crédito disponível; e a poupança (total + quanto cada conta guardou).
+  // É a posição de hoje — não muda com o mês selecionado.
+  function renderSaldoDetalhe() {
+    function item(rot, v) {
+      return '<span class="sc-item"><small>' + rot + '</small><b class="num' + (v < 0 ? " saldo-neg" : "") + '">' + valSpan(u.fmtBRL.format(v)) + "</b></span>";
+    }
+    var contas = App.state.cartoes;
+    var html = '<div class="saldo-detalhe"><p class="saldo-sec">Contas · posição de hoje</p>';
+    if (!contas.length) {
+      html += '<p class="saldo-vazio">Cadastre suas contas na aba Contas para ver saldo e crédito disponíveis aqui.</p>';
+    } else {
+      html += contas.map(function (c) {
+        var itens = [];
+        if (data.tipoConta(c) === "alimentacao") itens.push(item("Saldo disponível", data.saldoConta(c)));
+        else {
+          if (data.contaTemSaldo(c)) itens.push(item("Saldo disponível", data.saldoConta(c)));
+          if (data.contaTemCredito(c)) itens.push(item("Crédito disponível", data.limiteDisponivel(c)));
+        }
+        return '<div class="sc-row" style="border-left:3px solid ' + data.corCartao(c.id) + '">' +
+          '<div class="sc-nome">' + u.escapeHtml(c.nome) + "</div>" +
+          '<div class="sc-vals">' + itens.join("") + "</div></div>";
+      }).join("");
+    }
+    if (App.state.poupancas.length) {
+      var pc = data.poupadoPorConta(), linhas = "";
+      pc.porConta.forEach(function (x) {
+        linhas += '<div class="sc-linha"><span>' + u.escapeHtml(x.conta.nome) + '</span><b class="num">' + valSpan(u.fmtBRL.format(x.valor)) + "</b></div>";
+      });
+      if (Math.abs(pc.semConta) > 0.004) linhas += '<div class="sc-linha"><span>Rendimentos / sem conta</span><b class="num">' + valSpan(u.fmtBRL.format(pc.semConta)) + "</b></div>";
+      html += '<div class="saldo-sec-row"><p class="saldo-sec" style="margin:0">Poupança</p>' +
+        '<span class="sc-total">Total disponível <b class="num">' + valSpan(u.fmtBRL.format(data.saldoPoupancaTotal())) + "</b></span></div>" +
+        (linhas ? '<p class="saldo-sub">Valor poupado em cada conta</p>' + linhas : '<p class="saldo-vazio">Nada guardado ainda.</p>');
+    }
+    return html + "</div>";
+  }
+
   function renderResumo() {
     var d = data.despesasDoMes(mesSelecionado);
     var s = data.saldoDoMes(mesSelecionado);
@@ -354,6 +393,8 @@ window.App = window.App || {};
       '<div class="card">' +
         '<p class="card-label">Saldo</p>' +
         '<p class="big-number num ' + (s >= 0 ? "saldo-pos" : "saldo-neg") + '" id="saldoValue">' + valSpan(u.fmtBRL.format(s)) + "</p>" +
+        '<p class="saldo-sub" style="margin:2px 0 0">Renda − despesas de ' + u.fmtMonth(mesSelecionado) + "</p>" +
+        renderSaldoDetalhe() +
       "</div>" +
       renderComparativoCard() +
       renderMetaCard() +
@@ -422,6 +463,17 @@ window.App = window.App || {};
 
   // ---- Poupança (seção dentro da aba Contas) ----
   var ROT_MOV = { deposito: "Depósito", retirada: "Retirada", rendimento: "Rendimento" };
+  // "Guardado por conta" dentro do card de cada poupança.
+  function porContaPoupanca(p) {
+    var partes = [];
+    App.state.cartoes.forEach(function (c) {
+      var v = data.poupadoNaConta(p.id, c.id);
+      if (Math.abs(v) > 0.004) partes.push(u.escapeHtml(c.nome) + " " + u.fmtBRL.format(v));
+    });
+    var sem = data.poupadoSemConta(p.id);
+    if (Math.abs(sem) > 0.004) partes.push("sem conta " + u.fmtBRL.format(sem));
+    return partes.length ? '<p class="cartao-detalhe">' + valSpan("Guardado por conta: " + partes.join(" · ")) + "</p>" : "";
+  }
   function renderPoupanca() {
     var ps = App.state.poupancas;
     var cab = '<div class="meta-row section-title" style="margin-top:22px"><span>Poupança' + (ps.length > 1 ? " · total " + valSpan(u.fmtBRL.format(data.saldoPoupancaTotal())) : "") +
@@ -436,12 +488,15 @@ window.App = window.App || {};
           '<button class="icon-btn" data-edit-poup="' + p.id + '" aria-label="Editar">' + ICONS.edit + "</button>" +
           '<button class="icon-btn icon-btn-del" data-del-poup="' + p.id + '" aria-label="Excluir">' + ICONS.trash + "</button></div></div>" +
         '<p class="big-number num" style="font-size:24px;margin:0 0 6px">' + valSpan(u.fmtBRL.format(saldo)) + "</p>" +
+ porContaPoupanca(p) +
         (p.meta > 0 ? '<p class="cartao-detalhe">' + valSpan("Meta " + u.fmtBRL.format(p.meta) + " · " + pct.toFixed(0) + "%") + '</p><div class="bar-track"><div class="bar-fill" style="width:' + pct.toFixed(1) + "%;background:" + (p.cor || "var(--teal)") + '"></div></div>' : "") +
         '<div class="btn-row" style="margin:12px 0 4px"><button class="btn btn-ghost" data-mov-poup="' + p.id + '" data-tipo="deposito">Depositar</button>' +
           '<button class="btn btn-ghost" data-mov-poup="' + p.id + '" data-tipo="retirada">Retirar</button>' +
           '<button class="btn btn-ghost" data-mov-poup="' + p.id + '" data-tipo="rendimento">Rendimento</button></div>' +
         movs.map(function (m) {
-          return '<div class="lembrete-row"><span class="t">' + ROT_MOV[m.tipo] + " · " + u.fmtDate(m.data) + (m.descricao ? " · " + u.escapeHtml(m.descricao) : "") + "</span>" +
+          var cm = data.contaPorId(m.contaId);
+          var rotConta = cm ? (m.tipo === "deposito" ? " · de " : m.tipo === "retirada" ? " · para " : " · ") + u.escapeHtml(cm.nome) : "";
+          return '<div class="lembrete-row"><span class="t">' + ROT_MOV[m.tipo] + " · " + u.fmtDate(m.data) + rotConta + (m.descricao ? " · " + u.escapeHtml(m.descricao) : "") + "</span>" +
             '<span class="num" style="font-size:13px">' + valSpan((m.tipo === "retirada" ? "−" : "+") + u.fmtBRL.format(m.valor)) + "</span>" +
             '<button class="icon-btn icon-btn-del" data-del-mov="' + m.id + '" aria-label="Excluir movimentação">' + ICONS.trash + "</button></div>";
         }).join("") + "</div>";
@@ -487,7 +542,16 @@ window.App = window.App || {};
     var temCredito = data.temRecurso(c, "credito");
     var tags = ' <span class="cartao-venc-tag">' + data.rotuloRecursos(c) + "</span>";
     var corpo = "";
+    // Saldo disponível (dinheiro na conta, p/ Pix e Débito) — separado do limite do crédito.
+    if (data.contaTemSaldo(c)) {
+      var sd = data.saldoConta(c);
+      corpo +=
+        '<p class="cartao-saldo-label">Saldo disponível</p>' +
+        '<p class="big-number num ' + (sd < 0 ? "saldo-neg" : "") + '" style="font-size:26px;margin:0 0 8px">' + valSpan(u.fmtBRL.format(sd)) + "</p>" +
+        '<div class="btn-row" style="margin:0 0 ' + (temCredito ? "14px" : "4px") + '"><button class="btn btn-ghost" data-add-saldo="' + c.id + '">+ Adicionar saldo</button></div>';
+    }
     if (temCredito) {
+      if (data.contaTemSaldo(c)) corpo += '<p class="cartao-saldo-label" style="padding-top:12px;border-top:1px dashed var(--border)">Crédito</p>';
       if (c.diaFechamento) tags += ' <span class="cartao-venc-tag">fecha dia ' + c.diaFechamento + "</span>";
       if (c.diaVencimento) tags += ' <span class="cartao-venc-tag">vence dia ' + c.diaVencimento + "</span>";
       var det = data.usadoCartaoDetalhado(c.id);
@@ -501,7 +565,7 @@ window.App = window.App || {};
         '<div class="cartao-stats">' +
           "<span>Limite<b class=\"num\">" + valSpan(u.fmtBRL.format(c.limite)) + "</b></span>" +
           "<span>Usado<b class=\"num\">" + valSpan(u.fmtBRL.format(usado)) + "</b></span>" +
-          "<span>Restante<b class=\"num\">" + valSpan(u.fmtBRL.format(restante)) + "</b></span>" +
+          "<span>Limite disponível<b class=\"num\">" + valSpan(u.fmtBRL.format(restante)) + "</b></span>" +
         "</div>" +
         (partes.length ? '<p class="cartao-detalhe">' + valSpan(partes.join(" · ")) + "</p>" : "") +
         '<div class="bar-track"><div class="bar-fill' + (pct > 80 ? " high" : "") + '" style="width:' + pct.toFixed(1) + "%;background:" + (pct > 80 ? "var(--red)" : cor) + '"></div></div>' +
@@ -541,6 +605,22 @@ window.App = window.App || {};
     });
   }
 
+  // Entradas (saldo adicionado) respeitam mês, texto e conta. Não têm categoria,
+  // meio de pagamento nem "em aberto": somem se esses filtros estiverem ativos.
+  function entradasFiltradas() {
+    if (filtros.categoria || filtros.meio || filtros.status === "aberto" || filtros.status === "vencido") return [];
+    var texto = filtros.texto.trim().toLowerCase();
+    return App.state.entradas.filter(function (e) {
+      if (!filtros.todos && e.data.slice(0, 7) !== mesSelecionado) return false;
+      if (filtros.cartaoId && e.contaId !== filtros.cartaoId) return false;
+      if (texto && (e.descricao || "saldo adicionado").toLowerCase().indexOf(texto) === -1) return false;
+      return true;
+    });
+  }
+  function renderAddSaldoBar() {
+    return '<button class="btn btn-ghost btn-addsaldo" id="btnAddSaldo">+ Adicionar saldo a uma conta</button>';
+  }
+
   function renderFilterBar() {
     var cats = data.categoriasTodas();
     var catOptions = '<option value="">Todas categorias</option>' + cats.map(function (c) {
@@ -575,8 +655,9 @@ window.App = window.App || {};
   }
 
   // Resumo do que está listado: total, já pago, em aberto e vencido.
-  function renderLancResumo(lista) {
+  function renderLancResumo(lista, ents) {
     var tot = 0, pago = 0, aberto = 0, venc = 0, benef = 0;
+    var entTot = (ents || []).reduce(function (s, e) { return s + e.valor; }, 0);
     lista.forEach(function (l) {
       if (data.ehBeneficio(l.cartaoId)) { benef += l.valor; return; }
       tot += l.valor;
@@ -588,6 +669,7 @@ window.App = window.App || {};
       '<span>Total<b class="num">' + valSpan(u.fmtBRL.format(tot)) + "</b></span>" +
       '<span>Pago<b class="num saldo-pos">' + valSpan(u.fmtBRL.format(pago)) + "</b></span>" +
       '<span>Em aberto<b class="num">' + valSpan(u.fmtBRL.format(aberto)) + "</b></span>" +
+      (entTot > 0 ? '<span>Entradas<b class="num saldo-pos">' + valSpan(u.fmtBRL.format(entTot)) + "</b></span>" : "") +
       '<div style="flex-basis:100%"><div class="bar-track"><div class="bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
       '<p class="cartao-detalhe" style="margin:6px 0 0">' + lista.length + (lista.length === 1 ? " lançamento" : " lançamentos") +
         (venc > 0 ? ' · <span class="saldo-neg">' + valSpan(u.fmtBRL.format(venc)) + " vencido</span>" : "") +
@@ -615,28 +697,49 @@ window.App = window.App || {};
 
   function renderLancamentos() {
     var filtrando = !!(filtros.texto || filtros.categoria || filtros.cartaoId || filtros.status || filtros.meio);
-    if (App.state.lancamentos.length === 0) return emptyState("lancamentos");
-    var lista = lancamentosFiltrados();
-    var barra = renderFilterBar();
-    if (lista.length === 0) return barra + emptyState("filtro") + (filtrando ? '<p class="filter-empty-note" style="text-align:center"><span class="filter-clear" id="limparFiltros">limpar filtros</span></p>' : "") + (!filtros.todos && !filtrando ? '<p class="filter-empty-note" style="text-align:center">Nenhum lançamento em ' + u.fmtMonth(mesSelecionado) + '. Use as setas para trocar de mês ou toque no + para adicionar.</p>' : "");
-    var ordenados = lista.slice().sort(function (a, b) { return b.vencimento.localeCompare(a.vencimento); });
-    var nota = filtrando ? '<p class="filter-empty-note">' + ordenados.length + " resultado" + (ordenados.length === 1 ? "" : "s") +
+    var addBar = renderAddSaldoBar();
+    if (App.state.lancamentos.length === 0 && App.state.entradas.length === 0) return addBar + emptyState("lancamentos");
+    var lista = lancamentosFiltrados(), ents = entradasFiltradas();
+    var barra = addBar + renderFilterBar();
+    if (lista.length === 0 && ents.length === 0) return barra + emptyState("filtro") + (filtrando ? '<p class="filter-empty-note" style="text-align:center"><span class="filter-clear" id="limparFiltros">limpar filtros</span></p>' : "") + (!filtros.todos && !filtrando ? '<p class="filter-empty-note" style="text-align:center">Nenhum lançamento em ' + u.fmtMonth(mesSelecionado) + '. Use as setas para trocar de mês ou toque no + para adicionar.</p>' : "");
+    // Saídas e entradas na mesma linha do tempo, por data.
+    var itens = lista.map(function (l) { return { k: "l", data: l.vencimento, l: l }; })
+      .concat(ents.map(function (e) { return { k: "e", data: e.data, e: e }; }))
+      .sort(function (a, b) { return b.data.localeCompare(a.data); });
+    var nota = filtrando ? '<p class="filter-empty-note">' + itens.length + " resultado" + (itens.length === 1 ? "" : "s") +
       ' · <span class="filter-clear" id="limparFiltros">limpar filtros</span></p>' : "";
     var lastDia = null;
     var partes = [];
-    ordenados.forEach(function (l) {
-      if (l.vencimento !== lastDia) {
-        lastDia = l.vencimento;
-        partes.push('<div class="dia-header">' + u.capitalize(u.fmtDiaRelativo(l.vencimento)) + "</div>");
+    itens.forEach(function (it) {
+      if (it.data !== lastDia) {
+        lastDia = it.data;
+        partes.push('<div class="dia-header">' + u.capitalize(u.fmtDiaRelativo(it.data)) + "</div>");
       }
+      if (it.k === "e") {
+        var e = it.e, ce = data.contaPorId(e.contaId);
+        partes.push(
+          '<div class="lanc-item entrada-item" data-entrada="' + e.id + '">' +
+            '<span class="lanc-dot entrada" title="entrada"></span>' +
+            '<div class="lanc-info"><div class="t">' + u.escapeHtml(e.descricao || "Saldo adicionado") + "</div>" +
+              '<div class="m">' + u.fmtDate(e.data) + " · Entrada · " + (ce ? u.escapeHtml(ce.nome) : "conta excluída") + (e.data > u.todayISO() ? " · a receber" : "") + "</div></div>" +
+            '<div class="lanc-valor num saldo-pos">+' + valSpan(u.fmtBRL.format(e.valor)) + "</div>" +
+            (selecionando ? "" : '<span class="entrada-actions">' +
+              '<button class="icon-btn" data-edit-entrada="' + e.id + '" aria-label="Editar entrada">' + ICONS.edit + "</button>" +
+              '<button class="icon-btn icon-btn-del" data-del-entrada="' + e.id + '" aria-label="Excluir entrada">' + ICONS.trash + "</button></span>") +
+          "</div>");
+        return;
+      }
+      var l = it.l;
       var cartaoNome = "";
       if (l.cartaoId) {
         var c = App.state.cartoes.filter(function (x) { return x.id === l.cartaoId; })[0];
         if (c) cartaoNome = " · " + c.nome;
       }
+      // Alimentação: desconta na hora, com "data da transação" — sem vencimento nem status em aberto.
+      var imediata = data.ehTransacaoImediata(l);
       var dias = u.diasAte(l.vencimento);
-      var vencida = l.status === "aberto" && dias < 0;
-      var emBreve = l.status === "aberto" && dias >= 0 && dias <= 3;
+      var vencida = !imediata && l.status === "aberto" && dias < 0;
+      var emBreve = !imediata && l.status === "aberto" && dias >= 0 && dias <= 3;
       var rowClass = vencida ? " vencida" : (emBreve ? " em-breve" : "");
       var dotClass = l.status === "aberto" ? (vencida ? " vencida" : " aberto") : "";
       var tag = "";
@@ -648,7 +751,7 @@ window.App = window.App || {};
       var checked = selecionados.indexOf(l.id) !== -1;
       var indicador = selecionando
         ? '<span class="lanc-check' + (checked ? " checked" : "") + '">' + (checked ? ICONS.check : "") + "</span>"
-        : '<span class="lanc-dot' + dotClass + '" title="' + l.status + '"></span>';
+        : '<span class="lanc-dot' + dotClass + '" title="' + (imediata ? "descontado" : l.status) + '"></span>';
       var acoesFixas = selecionando
         ? ""
         : '<span class="lanc-actions-fixed">' + comprovanteTag +
@@ -659,7 +762,7 @@ window.App = window.App || {};
           indicador +
           '<div class="lanc-info">' +
             '<div class="t">' + u.escapeHtml(l.titulo) + "</div>" +
-            '<div class="m">' + u.fmtDate(l.vencimento) + " · " + l.categoria + cartaoNome + tag + "</div>" +
+            '<div class="m">' + (imediata ? "Transação " : "") + u.fmtDate(l.vencimento) + " · " + l.categoria + cartaoNome + tag + "</div>" +
           "</div>" +
           '<div class="lanc-valor num">' + valSpan(u.fmtBRL.format(l.valor)) + "</div>" +
           acoesFixas +
@@ -670,9 +773,9 @@ window.App = window.App || {};
         // Swipe: painel de ações fica atrás, revelado ao arrastar o item pra
         // esquerda (gesto comum em apps de finanças no celular).
         partes.push(
-          '<div class="lanc-swipe" data-lanc-swipe="' + l.id + '">' +
+          '<div class="lanc-swipe' + (imediata ? " no-pay" : "") + '" data-lanc-swipe="' + l.id + '">' +
             '<div class="lanc-swipe-pay">' +
-              (l.status === "aberto"
+              (imediata ? "" : l.status === "aberto"
                 ? '<button class="swipe-action pay" data-pay-lanc="' + l.id + '" aria-label="Pagar">' + ICONS.check + "<span>Pagar</span></button>"
                 : '<button class="swipe-action reopen" data-pay-lanc="' + l.id + '" aria-label="Reabrir">' + ICONS.repeat + "<span>Reabrir</span></button>") +
             "</div>" +
@@ -686,7 +789,7 @@ window.App = window.App || {};
       }
     });
     var linhas = partes.join("");
-    return barra + renderLancResumo(lista) + nota + linhas + (selecionando ? renderBulkBar() : "");
+    return barra + renderLancResumo(lista, ents) + nota + linhas + (selecionando ? renderBulkBar() : "");
   }
 
   // ---- Extrato ----
@@ -694,7 +797,7 @@ window.App = window.App || {};
     var itens = data.extratoDoMes(mesSelecionado, extFiltro.status === "realizadas", extFiltro.conta);
     var ent = 0, sai = 0, guard = 0;
     itens.forEach(function (i) {
-      if (i.kind === "renda") ent += i.valor;
+      if (i.kind === "renda" || i.kind === "entrada") ent += i.valor;
       else if (i.kind === "lanc") { if (!i.beneficio) sai += -i.valor; }
       else guard += -i.valor;
     });
@@ -712,7 +815,7 @@ window.App = window.App || {};
     var ultimo = null;
     itens.forEach(function (i, idx) {
       if (i.data !== ultimo) { ultimo = i.data; html += '<div class="dia-header">' + u.capitalize(u.fmtDiaRelativo(i.data)) + "</div>"; }
-      var sub = i.l ? i.l.categoria + (i.l.status === "aberto" ? " · em aberto" : "") + (i.beneficio ? " · benefício" : "") : (i.kind === "renda" ? "Receita" : "Poupança");
+      var sub = i.l ? i.l.categoria + (i.l.status === "aberto" ? " · em aberto" : "") + (i.beneficio ? " · benefício" : "") : (i.kind === "renda" ? "Receita" : i.kind === "entrada" ? "Saldo adicionado" + (i.contaNome ? " · " + i.contaNome : "") : "Poupança");
       var cls = i.kind === "poup" ? "" : (i.valor >= 0 ? " saldo-pos" : "");
       html += '<div class="lanc-item" data-ext-item="' + idx + '"><div class="lanc-info"><div class="t">' + u.escapeHtml(i.titulo) + '</div><div class="m">' + sub + "</div></div>" +
         '<div class="lanc-valor num' + cls + '">' + valSpan((i.valor < 0 ? "−" : "+") + u.fmtBRL.format(Math.abs(i.valor))) + "</div></div>";
@@ -795,6 +898,25 @@ window.App = window.App || {};
     q("[data-ext-item]", function (row) {
       row.addEventListener("click", function () { App.sheets.openExtratoDetalheSheet(renderExtrato.itens[+row.getAttribute("data-ext-item")]); });
     });
+    var btnAddSaldo = document.getElementById("btnAddSaldo");
+    if (btnAddSaldo) btnAddSaldo.addEventListener("click", function () { App.sheets.openEntradaSheet(); });
+    q("[data-add-saldo]", function (b) { b.addEventListener("click", function () { App.sheets.openEntradaSheet(null, b.getAttribute("data-add-saldo")); }); });
+    q("[data-edit-entrada]", function (b) { b.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var ent = App.state.entradas.filter(function (x) { return x.id === b.getAttribute("data-edit-entrada"); })[0];
+      if (ent) App.sheets.openEntradaSheet(ent);
+    }); });
+    q("[data-del-entrada]", function (b) { b.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var idx = App.state.entradas.findIndex(function (x) { return x.id === b.getAttribute("data-del-entrada"); });
+      if (idx === -1) return;
+      var ent = App.state.entradas[idx], conta = data.contaPorId(ent.contaId);
+      if (conta && ent.data <= u.todayISO()) {
+        var atual = data.saldoConta(conta), depois = data.arred(atual - ent.valor);
+        if (depois < -0.004 && depois < atual && !window.confirm("Excluir esta entrada deixa o saldo de " + conta.nome + " negativo (" + u.fmtBRL.format(depois) + "). Excluir mesmo assim?")) return;
+      }
+      excluirComUndo(App.state.entradas, idx, ent, "Entrada excluída");
+    }); });
     var btnNovaPoup = document.getElementById("btnNovaPoup");
     if (btnNovaPoup) btnNovaPoup.addEventListener("click", function () { App.sheets.openPoupancaSheet(); });
     q("[data-edit-poup]", function (b) { b.addEventListener("click", function () {
@@ -805,14 +927,17 @@ window.App = window.App || {};
     }); });
     q("[data-del-poup]", function (b) { b.addEventListener("click", function () {
       var idx = App.state.poupancas.findIndex(function (p) { return p.id === b.getAttribute("data-del-poup"); });
-      if (idx === -1 || !window.confirm('Excluir a poupança "' + App.state.poupancas[idx].nome + '" e todo o seu histórico?')) return;
+      if (idx === -1 || !window.confirm('Excluir a poupança "' + App.state.poupancas[idx].nome + '" e todo o seu histórico? O que cada conta guardou volta para o saldo dela.')) return;
       var p = App.state.poupancas[idx], movs = App.state.movPoupanca.filter(function (m) { return m.poupancaId === p.id; });
       App.state.movPoupanca = App.state.movPoupanca.filter(function (m) { return m.poupancaId !== p.id; });
       excluirComUndo(App.state.poupancas, idx, p, "Poupança excluída", function () { App.state.movPoupanca = App.state.movPoupanca.concat(movs); });
     }); });
     q("[data-del-mov]", function (b) { b.addEventListener("click", function () {
       var idx = App.state.movPoupanca.findIndex(function (m) { return m.id === b.getAttribute("data-del-mov"); });
-      if (idx !== -1) excluirComUndo(App.state.movPoupanca, idx, App.state.movPoupanca[idx], "Movimentação excluída");
+      if (idx === -1) return;
+      var erroMov = data.validarRemocaoMov(App.state.movPoupanca[idx]);
+      if (erroMov) { toast(erroMov); return; }
+      excluirComUndo(App.state.movPoupanca, idx, App.state.movPoupanca[idx], "Movimentação excluída");
     }); });
     var salarioInput = document.getElementById("salarioInput");
     if (salarioInput) {
@@ -970,6 +1095,7 @@ window.App = window.App || {};
         }
         var l = App.state.lancamentos.filter(function (x) { return x.id === id; })[0];
         if (!l) return;
+        if (data.ehTransacaoImediata(l)) { toast("Transação de Alimentação: já descontada do saldo"); return; }
         var vaiPagar = l.status === "aberto";
         l.status = vaiPagar ? "pago" : "aberto";
         data.saveState();
@@ -994,7 +1120,7 @@ window.App = window.App || {};
       btn.addEventListener("click", function (e) {
         e.stopPropagation();
         var l = App.state.lancamentos.filter(function (x) { return x.id === btn.getAttribute("data-pay-lanc"); })[0];
-        if (!l) return;
+        if (!l || data.ehTransacaoImediata(l)) return;
         var vaiPagar = l.status === "aberto";
         l.status = vaiPagar ? "pago" : "aberto";
         data.saveState();
@@ -1049,7 +1175,7 @@ window.App = window.App || {};
     var bulkAberto = document.getElementById("bulkAberto");
     if (bulkAberto) bulkAberto.addEventListener("click", function () {
       if (selecionados.length === 0) return;
-      App.state.lancamentos.forEach(function (l) { if (selecionados.indexOf(l.id) !== -1) l.status = "aberto"; });
+      App.state.lancamentos.forEach(function (l) { if (selecionados.indexOf(l.id) !== -1 && !data.ehTransacaoImediata(l)) l.status = "aberto"; });
       data.saveState();
       selecionando = false; selecionados = [];
       render();

@@ -448,3 +448,31 @@ nav.tabbar svg { width: 21px; height: 21px; }
 .recurso-chip input:checked + span { background: var(--teal-soft); color: var(--teal); border-color: var(--teal); }
 .recurso-chip input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
 .cartao-saldo-label { font-size: 12px; color: var(--ink-soft); margin: 0 0 2px; }
+
+/* ===== Saldo por conta, entradas e poupança por conta ===== */
+.saldo-sub { font-size: 12px; color: var(--ink-soft); margin: 10px 0 6px; }
+.saldo-detalhe { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.saldo-sec { font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--ink-soft); margin: 0 0 8px; }
+.saldo-sec-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 18px 0 2px; padding-top: 14px; border-top: 1px solid var(--border); }
+.saldo-vazio { font-size: 13px; color: var(--ink-soft); margin: 0; }
+.sc-row { padding: 8px 0 8px 10px; margin-bottom: 8px; background: var(--surface-2); border-radius: 0 10px 10px 0; }
+.sc-nome { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.sc-vals { display: flex; gap: 18px; flex-wrap: wrap; }
+.sc-item small { display: block; font-size: 11.5px; color: var(--ink-soft); }
+.sc-item b { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; }
+.sc-total { font-size: 12.5px; color: var(--ink-soft); }
+.sc-total b { color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; margin-left: 4px; }
+.sc-linha { display: flex; justify-content: space-between; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.sc-linha:last-child { border-bottom: none; }
+.sc-linha b { font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+
+.saldo-hint { display: block; font-size: 12px; color: var(--teal); margin-top: 5px; }
+.saldo-hint.warn { color: var(--red); }
+
+.seg { display: flex; gap: 4px; padding: 3px; background: var(--surface-2); border-radius: 11px; margin: 0 0 16px; }
+.seg-btn { flex: 1; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; border: none; border-radius: 9px; background: transparent; color: var(--ink-soft); cursor: pointer; }
+.seg-btn.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+.btn-addsaldo { width: 100%; margin: 0 0 12px; }
+.lanc-dot.entrada { background: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
+.entrada-actions { display: flex; align-items: center; }

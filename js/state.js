@@ -103,8 +103,10 @@ window.App = window.App || {};
       receitasExtras: [],       // [{id, titulo, valor, mes: "YYYY-MM"}]
       cartoes: [],             // contas: [{id, nome, tipo: credito|debito|pix, limite, ...}]
       poupancas: [],           // [{id, nome, meta, cor}]
-      movPoupanca: [],         // [{id, poupancaId, tipo: deposito|retirada|rendimento, valor, data, descricao}]
+      movPoupanca: [],         // [{id, poupancaId, contaId, tipo: deposito|retirada|rendimento, valor, data, descricao}]
       lancamentos: [],
+      entradas: [],             // [{id, contaId, valor, data, descricao}] — saldo adicionado às contas
+      versaoSaldo: 1,           // 1 = lançamentos Pix/Débito já descontam do saldo da conta (ver migrarEstado)
       categoriasCustom: [],     // categorias extras criadas pelo usuário
       metas: {},                // { "YYYY-MM": valorAlvo }
       metasCategoria: {},       // { "YYYY-MM": { categoria: valorAlvo } }
@@ -129,6 +131,37 @@ window.App = window.App || {};
     });
   }
 
+  // Conta Alimentação / meio "Vale alimentação": o valor sai do saldo NO MOMENTO
+  // da transação — não existe vencimento nem "conta a vencer".
+  function ehTransacaoEm(l, cartoes) {
+    if (!l) return false;
+    if (l.meioPagamento === "Vale alimentação") return true;
+    var c = l.cartaoId ? cartoes.filter(function (x) { return x.id === l.cartaoId; })[0] : null;
+    return !!c && c.tipo === "alimentacao";
+  }
+
+  // Migrações idempotentes (usadas ao carregar e ao importar backup):
+  //  - entradas: garante o array de saldo adicionado às contas;
+  //  - versaoSaldo: contas passaram a ter saldo próprio. Os Pix/Débito JÁ
+  //    lançados antes dessa versão ficam marcados `semSaldo` e não descontam
+  //    de saldo nenhum (senão toda conta existente nasceria negativa). Só os
+  //    lançamentos novos descontam; o usuário informa o saldo real da conta
+  //    com "Adicionar saldo";
+  //  - lançamentos de Alimentação nunca ficam "em aberto".
+  function migrarEstado(st) {
+    if (!Array.isArray(st.entradas)) st.entradas = [];
+    if (!st.versaoSaldo) {
+      st.lancamentos.forEach(function (l) {
+        if (l.meioPagamento === "Pix" || l.meioPagamento === "Débito") l.semSaldo = true;
+      });
+      st.versaoSaldo = 1;
+    }
+    st.lancamentos.forEach(function (l) {
+      if (ehTransacaoEm(l, st.cartoes)) l.status = "pago";
+    });
+    return st;
+  }
+
   function loadState() {
     try {
       var raw = localStorage.getItem(chaveDoPerfil(perfis.atual));
@@ -145,8 +178,11 @@ window.App = window.App || {};
           poupancas: parsed.poupancas || [],
           movPoupanca: parsed.movPoupanca || [],
           lancamentos: parsed.lancamentos || [],
+          entradas: parsed.entradas || [],
+          versaoSaldo: parsed.versaoSaldo || 0, // 0 = estado anterior ao saldo por conta (migrarEstado trata)
           prefs: Object.assign(base.prefs, parsed.prefs || {})
         });
+        migrarEstado(merged);
         // Migração: quem já tinha um salário único fixo vira o valor "base"
         // a partir do mês corrente, sem apagar nada — os meses passados
         // continuam usando o mesmo valor até o usuário definir outro.
@@ -329,7 +365,7 @@ window.App = window.App || {};
 
   function lembretesPendentes() {
     return App.state.lancamentos
-      .filter(function (l) { return l.status === "aberto" && u.diasAte(l.vencimento) <= 7; })
+      .filter(function (l) { return l.status === "aberto" && !ehTransacaoImediata(l) && u.diasAte(l.vencimento) <= 7; })
       .sort(function (a, b) { return a.vencimento.localeCompare(b.vencimento); });
   }
 
@@ -537,24 +573,133 @@ window.App = window.App || {};
     return lancamentosDoMes(mes).reduce(function (s, l) { return l.cartaoId === id ? s + l.valor : s; }, 0);
   }
 
+  // ---- Contas: saldo disponível x limite de crédito ----
+  // Duas coisas SEPARADAS: o saldo (dinheiro na conta, usado em Pix/Débito) e o
+  // limite do crédito (usadoCartao). Pix/Débito nunca mexem no limite — o
+  // cálculo do limite já ignora lançamentos que não sejam "Cartão de crédito".
+  function arred(n) { return Math.round(n * 100) / 100; }
+  function contaPorId(id) { return id ? App.state.cartoes.filter(function (x) { return x.id === id; })[0] || null : null; }
+  function ehTransacaoImediata(l) { return ehTransacaoEm(l, App.state.cartoes); }
+  // Tem saldo próprio: conta com Pix e/ou Débito (Alimentação tem o saldo do vale, à parte).
+  function contaTemSaldo(c) { return !!c && tipoConta(c) === "conta" && (temRecurso(c, "pix") || temRecurso(c, "debito")); }
+  function contasComSaldo() { return App.state.cartoes.filter(contaTemSaldo); }
+  function contaTemCredito(c) { return temRecurso(c, "credito"); }
+  function limiteDisponivel(c) { return contaTemCredito(c) ? arred(c.limite - usadoCartao(c.id)) : 0; }
+
+  // saldo = entradas (até hoje) − depósitos na poupança + retiradas da poupança
+  //         − Pix/Débito já pagos. Derivado, então editar/excluir qualquer
+  //         lançamento mantém tudo consistente (nada é "descontado à mão").
+  function saldoConta(c) {
+    if (!c) return 0;
+    if (tipoConta(c) === "alimentacao") return arred(saldoAlimentacao(c));
+    var hoje = u.todayISO(), s = 0;
+    App.state.entradas.forEach(function (e) { if (e.contaId === c.id && e.data <= hoje) s += e.valor; });
+    App.state.movPoupanca.forEach(function (m) {
+      if (m.contaId !== c.id || m.data > hoje) return;
+      if (m.tipo === "deposito") s -= m.valor; else if (m.tipo === "retirada") s += m.valor;
+    });
+    App.state.lancamentos.forEach(function (l) {
+      if (l.cartaoId !== c.id || l.status !== "pago" || l.semSaldo) return;
+      if (l.meioPagamento === "Pix" || l.meioPagamento === "Débito") s -= l.valor;
+    });
+    return arred(s);
+  }
+
   // ---- Poupança ----
+  // Cada depósito sai do saldo de UMA conta e cada retirada volta para UMA conta
+  // (`contaId`). Rendimento pode (opcionalmente) ser atribuído a uma conta: conta
+  // como "poupado" dela, mas não mexe no saldo da conta. Movimentos antigos, sem
+  // conta, ficam no balde "sem conta" (saldo da poupança − soma por conta).
   function movSinal(m) { return m.tipo === "retirada" ? -m.valor : m.valor; }
   function saldoPoupanca(id) {
-    return App.state.movPoupanca.reduce(function (s, m) { return m.poupancaId === id ? s + movSinal(m) : s; }, 0);
+    return arred(App.state.movPoupanca.reduce(function (s, m) { return m.poupancaId === id ? s + movSinal(m) : s; }, 0));
   }
   function saldoPoupancaTotal() {
-    return App.state.poupancas.reduce(function (s, p) { return s + saldoPoupanca(p.id); }, 0);
+    return arred(App.state.poupancas.reduce(function (s, p) { return s + saldoPoupanca(p.id); }, 0));
+  }
+  function poupadoNaConta(poupancaId, contaId) {
+    return arred(App.state.movPoupanca.reduce(function (s, m) {
+      return (m.poupancaId === poupancaId && m.contaId === contaId) ? s + movSinal(m) : s;
+    }, 0));
+  }
+  function poupadoSemConta(poupancaId) {
+    var atribuido = App.state.cartoes.reduce(function (s, c) { return s + poupadoNaConta(poupancaId, c.id); }, 0);
+    return arred(saldoPoupanca(poupancaId) - atribuido);
+  }
+  // Soma, em todas as poupanças, do que cada conta guardou. `semConta` reúne o
+  // resto (movimentos antigos e rendimentos sem conta).
+  function poupadoPorConta() {
+    var lista = App.state.cartoes.map(function (c) {
+      var v = arred(App.state.poupancas.reduce(function (s, p) { return s + poupadoNaConta(p.id, c.id); }, 0));
+      return { conta: c, valor: v };
+    }).filter(function (x) { return Math.abs(x.valor) > 0.004; });
+    var semConta = arred(saldoPoupancaTotal() - lista.reduce(function (s, x) { return s + x.valor; }, 0));
+    return { porConta: lista, semConta: semConta };
+  }
+
+  // Valida um depósito/retirada ANTES de gravar. Retorna a mensagem de erro ou null.
+  //  - depósito: a conta precisa ter saldo disponível suficiente;
+  //  - retirada: só pode tirar o que aquela conta (ou o balde "sem conta") guardou.
+  function validarMovPoupanca(poupancaId, tipo, contaId, valor) {
+    valor = arred(valor);
+    if (tipo === "deposito") {
+      var c = contaPorId(contaId);
+      if (!c) return "Escolha a conta de onde sai o valor";
+      var saldo = saldoConta(c);
+      if (valor > saldo + 0.004) {
+        return saldo > 0
+          ? "Saldo insuficiente em " + c.nome + ": disponível " + u.fmtBRL.format(saldo)
+          : c.nome + " não tem saldo disponível. Adicione saldo antes de guardar.";
+      }
+    } else if (tipo === "retirada") {
+      var disp = contaId ? poupadoNaConta(poupancaId, contaId) : poupadoSemConta(poupancaId);
+      var nome = contaId ? (contaPorId(contaId) || {}).nome : "valores sem conta";
+      if (valor > disp + 0.004) return "Só há " + u.fmtBRL.format(Math.max(0, disp)) + " guardados em " + nome + " nesta poupança";
+    }
+    return null;
+  }
+
+  // Impede excluir um movimento se isso deixaria a poupança (ou o que uma conta
+  // guardou, ou o saldo da conta) negativo. Retorna a mensagem ou null.
+  function validarRemocaoMov(m) {
+    var orig = App.state.movPoupanca, conta = contaPorId(m.contaId);
+    var antes = {
+      p: saldoPoupanca(m.poupancaId), pc: m.contaId ? poupadoNaConta(m.poupancaId, m.contaId) : 0,
+      sc: poupadoSemConta(m.poupancaId), c: conta ? saldoConta(conta) : 0
+    };
+    App.state.movPoupanca = orig.filter(function (x) { return x !== m; });
+    var depois;
+    try {
+      depois = {
+        p: saldoPoupanca(m.poupancaId), pc: m.contaId ? poupadoNaConta(m.poupancaId, m.contaId) : 0,
+        sc: poupadoSemConta(m.poupancaId), c: conta ? saldoConta(conta) : 0
+      };
+    } finally { App.state.movPoupanca = orig; }
+    function piorou(k) { return depois[k] < -0.004 && depois[k] < antes[k] - 0.004; }
+    if (piorou("p")) return "Não dá para excluir: a poupança ficaria com saldo negativo.";
+    if (piorou("pc")) return "Não dá para excluir: o valor guardado por " + conta.nome + " ficaria negativo.";
+    if (piorou("sc")) return "Não dá para excluir: o saldo sem conta da poupança ficaria negativo.";
+    if (piorou("c")) return "Não dá para excluir: " + conta.nome + " ficaria com saldo negativo.";
+    return null;
   }
 
   // ---- Extrato ----
   // Linha do tempo do mês: lançamentos (só pagos se `soRealizadas`), renda do
   // mês e movimentos de poupança. Valor negativo = saiu da conta.
   function extratoDoMes(mes, soRealizadas, contaId) {
-    var out = [], mesHoje = u.todayISO().slice(0, 7);
+    var out = [], mesHoje = u.todayISO().slice(0, 7), hoje = u.todayISO();
     lancamentosDoMes(mes).forEach(function (l) {
       if (soRealizadas && l.status !== "pago") return;
       if (contaId && l.cartaoId !== contaId) return;
       out.push({ kind: "lanc", id: l.id, data: l.vencimento, titulo: l.titulo, valor: -l.valor, l: l, beneficio: ehBeneficio(l.cartaoId) });
+    });
+    // Saldo adicionado às contas (entradas).
+    App.state.entradas.forEach(function (e) {
+      if (e.data.slice(0, 7) !== mes) return;
+      if (soRealizadas && e.data > hoje) return;
+      if (contaId && e.contaId !== contaId) return;
+      var c = contaPorId(e.contaId);
+      out.push({ kind: "entrada", id: e.id, data: e.data, titulo: e.descricao || "Saldo adicionado", valor: e.valor, e: e, contaNome: c ? c.nome : "" });
     });
     if (!contaId) {
       if (mes <= mesHoje || !soRealizadas) {
@@ -563,13 +708,16 @@ window.App = window.App || {};
           if (r.mes === mes) out.push({ kind: "renda", id: r.id, data: mes + "-01", titulo: r.titulo, valor: r.valor });
         });
       }
-      App.state.movPoupanca.forEach(function (m) {
-        if (m.data.slice(0, 7) !== mes) return;
-        var p = App.state.poupancas.filter(function (x) { return x.id === m.poupancaId; })[0];
-        var rot = { deposito: "Depósito", retirada: "Retirada", rendimento: "Rendimento" }[m.tipo];
-        out.push({ kind: "poup", id: m.id, data: m.data, titulo: (p ? p.nome : "Poupança") + " · " + rot, valor: m.tipo === "deposito" ? -m.valor : m.valor, mov: m });
-      });
     }
+    // Poupança: no extrato de uma conta só entram depósitos/retiradas ligados a ela.
+    App.state.movPoupanca.forEach(function (m) {
+      if (m.data.slice(0, 7) !== mes) return;
+      if (contaId && (m.contaId !== contaId || m.tipo === "rendimento")) return;
+      var p = App.state.poupancas.filter(function (x) { return x.id === m.poupancaId; })[0];
+      var c = contaPorId(m.contaId);
+      var rot = { deposito: "Depósito", retirada: "Retirada", rendimento: "Rendimento" }[m.tipo];
+      out.push({ kind: "poup", id: m.id, data: m.data, titulo: (p ? p.nome : "Poupança") + " · " + rot + (c && !contaId ? " (" + c.nome + ")" : ""), valor: m.tipo === "deposito" ? -m.valor : m.valor, mov: m });
+    });
     return out.sort(function (a, b) { return b.data.localeCompare(a.data); });
   }
 
@@ -579,6 +727,11 @@ window.App = window.App || {};
     saldoAlimentacao: saldoAlimentacao, definirSaldoAtual: definirSaldoAtual,
     proximaRenovacao: proximaRenovacao, aplicarRenovacoes: aplicarRenovacoes, gastosPorConta: gastosPorConta, gastoMesConta: gastoMesConta,
     saldoPoupanca: saldoPoupanca, saldoPoupancaTotal: saldoPoupancaTotal, extratoDoMes: extratoDoMes,
+    migrarEstado: migrarEstado, ehTransacaoImediata: ehTransacaoImediata, contaPorId: contaPorId,
+    contaTemSaldo: contaTemSaldo, contasComSaldo: contasComSaldo, contaTemCredito: contaTemCredito,
+    saldoConta: saldoConta, limiteDisponivel: limiteDisponivel, arred: arred,
+    poupadoNaConta: poupadoNaConta, poupadoSemConta: poupadoSemConta, poupadoPorConta: poupadoPorConta,
+    validarMovPoupanca: validarMovPoupanca, validarRemocaoMov: validarRemocaoMov,
     STORAGE_KEY: STORAGE_PREFIX,
     CATEGORIAS_FIXAS: CATEGORIAS_FIXAS,
     MEIOS: MEIOS,
