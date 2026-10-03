@@ -20,8 +20,8 @@ window.App = window.App || {};
   // Tipos de conta: "conta" (com recursos Pix/Crédito/Débito, combináveis) e "alimentacao" (saldo com renovação).
   var TIPOS_CONTA = { conta: "Conta", alimentacao: "Alimentação" };
   var RECURSOS = { pix: "Pix", credito: "Crédito", debito: "Débito" };
-  var CORES_CATEGORIA = ["#0E6B5C", "#B96A22", "#A83B32", "#5B7FBB", "#8B5FBF", "#3E8A72", "#C9944A", "#6B7280"];
-  var CORES_CARTAO = ["#0E6B5C", "#8B5FBF", "#A83B32", "#B96A22", "#5B7FBB", "#3E8A72", "#C9944A", "#2F6690"];
+  var CORES_CATEGORIA = ["#3532E8", "#E58A00", "#D23A4E", "#0C9A76", "#8B5CF6", "#06A5D6", "#E0679B", "#6B7089"];
+  var CORES_CARTAO = ["#3532E8", "#8B5CF6", "#D23A4E", "#E58A00", "#06A5D6", "#0C9A76", "#E0679B", "#2F6690"];
 
   // ---- Perfis ----
   function lerRegistroPerfis() {

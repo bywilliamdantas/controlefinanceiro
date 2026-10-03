@@ -156,7 +156,7 @@ window.App = window.App || {};
       "h1{font-size:20px;margin:0 0 2px}h2{font-size:14px;color:#57645C;font-weight:normal;margin:0 0 22px}" +
       ".cards{display:flex;gap:14px;margin-bottom:26px}.card{flex:1;border:1px solid #D9DCD4;border-radius:10px;padding:12px 14px}" +
       ".card .label{font-size:11px;color:#57645C;margin-bottom:4px}.card .val{font-size:19px;font-weight:bold}" +
-      ".pos{color:#0E6B5C}.neg{color:#A83B32}" +
+      ".pos{color:#0C9A76}.neg{color:#D23A4E}" +
       "table{width:100%;border-collapse:collapse;margin-bottom:26px;font-size:12.5px}" +
       "th{text-align:left;font-size:11px;color:#57645C;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #D9DCD4;padding:6px 8px}" +
       "td{padding:7px 8px;border-bottom:1px solid #EEF0EC}.num{text-align:right;font-variant-numeric:tabular-nums}" +

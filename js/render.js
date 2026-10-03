@@ -89,6 +89,8 @@ window.App = window.App || {};
       var item = wrap.querySelector(".lanc-item");
       item.style.transform = "translateX(0)";
       wrap.classList.remove("swiped", "swiped-pay");
+      // painéis de ação só ficam visíveis durante/depois do arraste (evita cor vazando nos cantos)
+      setTimeout(function () { if (!wrap.classList.contains("swiped") && !wrap.classList.contains("swiped-pay")) wrap.classList.remove("reveal"); }, 260);
       if (openWrap === wrap) openWrap = null;
     }
     document.querySelectorAll(".lanc-swipe").forEach(function (wrap) {
@@ -110,6 +112,7 @@ window.App = window.App || {};
         if (!moved && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
         if (!moved && Math.abs(dy) > Math.abs(dx)) { dragging = false; return; } // é scroll vertical
         moved = true;
+        wrap.classList.add("reveal");
         item.style.transform = "translateX(" + limitar(baseX + dx) + "px)";
       });
       function terminar(e) {
@@ -363,7 +366,7 @@ window.App = window.App || {};
           if (data.contaTemSaldo(c)) itens.push(item("Saldo disponível", data.saldoConta(c)));
           if (data.contaTemCredito(c)) itens.push(item("Crédito disponível", data.limiteDisponivel(c)));
         }
-        return '<div class="sc-row" style="border-left:3px solid ' + data.corCartao(c.id) + '">' +
+        return '<div class="sc-row" style="box-shadow:inset 5px 0 0 ' + data.corCartao(c.id) + '">' +
           '<div class="sc-nome">' + u.escapeHtml(c.nome) + "</div>" +
           '<div class="sc-vals">' + itens.join("") + "</div></div>";
       }).join("");
@@ -390,10 +393,12 @@ window.App = window.App || {};
         '<p class="card-label">Despesas em ' + u.fmtMonth(mesSelecionado) + '</p>' +
         '<p class="big-number num">' + valSpan(u.fmtBRL.format(d)) + "</p>" +
       "</div>" +
-      '<div class="card">' +
-        '<p class="card-label">Saldo</p>' +
-        '<p class="big-number num ' + (s >= 0 ? "saldo-pos" : "saldo-neg") + '" id="saldoValue">' + valSpan(u.fmtBRL.format(s)) + "</p>" +
-        '<p class="saldo-sub" style="margin:2px 0 0">Renda − despesas de ' + u.fmtMonth(mesSelecionado) + "</p>" +
+      '<div class="card card-hero">' +
+        '<div class="hero-top">' +
+          '<p class="card-label">Saldo</p>' +
+          '<p class="big-number num ' + (s >= 0 ? "saldo-pos" : "saldo-neg") + '" id="saldoValue">' + valSpan(u.fmtBRL.format(s)) + "</p>" +
+          '<p class="saldo-sub">Renda − despesas de ' + u.fmtMonth(mesSelecionado) + "</p>" +
+        "</div>" +
         renderSaldoDetalhe() +
       "</div>" +
       renderComparativoCard() +
@@ -483,7 +488,7 @@ window.App = window.App || {};
       var saldo = data.saldoPoupanca(p.id), pct = p.meta > 0 ? Math.min(100, saldo / p.meta * 100) : 0;
       var movs = App.state.movPoupanca.filter(function (m) { return m.poupancaId === p.id; })
         .sort(function (a, b) { return b.data.localeCompare(a.data); }).slice(0, 4);
-      return '<div class="card cartao-item" style="border-left:4px solid ' + (p.cor || "#3E8A72") + '">' +
+      return '<div class="card cartao-item" style="box-shadow:inset 5px 0 0 ' + (p.cor || "#0C9A76") + '">' +
         '<div class="head"><h3>' + u.escapeHtml(p.nome) + "</h3><div>" +
           '<button class="icon-btn" data-edit-poup="' + p.id + '" aria-label="Editar">' + ICONS.edit + "</button>" +
           '<button class="icon-btn icon-btn-del" data-del-poup="' + p.id + '" aria-label="Excluir">' + ICONS.trash + "</button></div></div>" +
@@ -522,7 +527,7 @@ window.App = window.App || {};
     var prox = data.proximaRenovacao(c);
     var regra = c.modoRenovacao === "somar" ? "acumula com a sobra" : "repõe o saldo";
     return (
-      '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' +
+      '<div class="card cartao-item" data-cartao="' + c.id + '" style="box-shadow:inset 5px 0 0 ' + cor + '">' +
         contaHead(c, ' <span class="cartao-venc-tag">Alimentação' + (c.diaRenovacao ? " · renova dia " + c.diaRenovacao : "") + "</span>") +
         '<p class="cartao-saldo-label">Saldo disponível</p>' +
         '<p class="big-number num ' + (saldo < 0 ? "saldo-neg" : "") + '" style="font-size:26px;margin:0 0 10px">' + valSpan(u.fmtBRL.format(saldo)) + "</p>" +
@@ -578,7 +583,7 @@ window.App = window.App || {};
     if (!temCredito || (c.recursos || []).length > 1) {
       corpo += '<div class="cartao-stats" style="' + (temCredito ? "margin:12px 0 0" : "") + '"><span>Gasto em ' + u.fmtMonth(mesHoje) + '<b class="num">' + valSpan(u.fmtBRL.format(data.gastoMesConta(c.id, mesHoje))) + "</b></span></div>";
     }
-    return '<div class="card cartao-item" data-cartao="' + c.id + '" style="border-left:4px solid ' + cor + '">' + contaHead(c, tags) + corpo + "</div>";
+    return '<div class="card cartao-item" data-cartao="' + c.id + '" style="box-shadow:inset 5px 0 0 ' + cor + '">' + contaHead(c, tags) + corpo + "</div>";
   }
 
   function renderContasLista() {
@@ -874,6 +879,7 @@ window.App = window.App || {};
   function render() {
     data.aplicarRenovacoes(); // renovações de contas Alimentação cuja data já chegou
     document.getElementById("pageTitle").textContent = TABS.filter(function (t) { return t.id === tab; })[0].label;
+    document.querySelector("header.topbar").setAttribute("data-tab", tab);
     document.getElementById("monthLabel").textContent = ((tab === "lancamentos" && !filtros.todos) || tab === "resumo" || tab === "extrato") ? u.capitalize(u.fmtMonth(mesSelecionado)) : "";
     document.getElementById("fab").style.display = (tab === "cartoes" || tab === "lancamentos") ? "flex" : "none";
     renderTabbar();

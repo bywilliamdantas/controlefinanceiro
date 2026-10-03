@@ -67,7 +67,7 @@ window.App = window.App || {};
     var areaPts = "0," + zeroY.toFixed(1) + " " + linePts + " " + (padL + w).toFixed(1) + "," + zeroY.toFixed(1);
 
     var dots = pontos.map(function (p, i) {
-      var cor = p.saldo >= 0 ? "var(--teal)" : "var(--red)";
+      var cor = p.saldo >= 0 ? "var(--pos)" : "var(--red)";
       return '<circle cx="' + xAt(i).toFixed(1) + '" cy="' + yAt(p.saldo).toFixed(1) + '" r="3.2" fill="' + cor + '"/>';
     }).join("");
 

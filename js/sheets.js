@@ -291,14 +291,14 @@ window.App = window.App || {};
     // nem repetição, nem "conta a vencer". O campo vira "Data da transação" e
     // não aceita data futura.
     function ehAlim() { return meioSelect.value === "Vale alimentação"; }
-    function syncAlimentacao() {
+    function syncAlimentacao(semCorrigirData) {
       var alim = ehAlim(), hoje = u.todayISO();
       document.getElementById("dataLabel").textContent = alim ? "Data da transação" : "Vencimento";
       var rep = document.getElementById("repeticaoWrap");
       if (rep) rep.style.display = alim ? "none" : "";
       if (alim) {
         dataInput.max = hoje;
-        if (dataInput.value > hoje) dataInput.value = hoje;
+        if (!semCorrigirData && dataInput.value > hoje) dataInput.value = hoje; // só ao trocar o meio; digitar data futura mostra erro ao salvar
         faturaHint.style.display = "block";
         var cAl = cartaoSelecionado();
         faturaHint.textContent = (cAl && cAl.baseData && dataInput.value && dataInput.value < cAl.baseData)
@@ -321,7 +321,7 @@ window.App = window.App || {};
       hint.textContent = "Saldo disponível em " + c.nome + ": " + u.fmtBRL.format(saldo) + (falta ? " — o valor é maior que o saldo" : "");
     }
     document.getElementById("fValor").addEventListener("input", atualizarSaldoHint);
-    dataInput.addEventListener("change", function () { if (ehAlim()) syncAlimentacao(); });
+    dataInput.addEventListener("change", function () { if (ehAlim()) syncAlimentacao(true); });
 
     // Quando o cartão selecionado tem dia de fechamento configurado, troca
     // pro fluxo "data da compra → vencimento calculado automaticamente",
@@ -360,7 +360,7 @@ window.App = window.App || {};
     // vencimento dele.
     cartaoSelect.addEventListener("change", function () {
       syncFechamento();
-      if (ehAlim()) syncAlimentacao();
+      if (ehAlim()) syncAlimentacao(true);
       atualizarSaldoHint();
       if (!cartaoSelect.value) return;
       var c = cartaoSelecionado();
@@ -982,7 +982,7 @@ window.App = window.App || {};
         '<div class="sheet-head"><h2>' + (ed ? "Editar poupança" : "Nova poupança") + '</h2><button class="icon-btn" id="closeSheet">' + ICONS.close + "</button></div>" +
         '<label class="field">Nome<input id="pNome" type="text" placeholder="Ex: Reserva de emergência" value="' + (ed ? u.escapeHtml(existing.nome) : "") + '"><span class="field-error-msg" id="errPNome"></span></label>' +
         '<div class="row2"><label class="field">Meta (opcional)<input id="pMeta" type="number" inputmode="decimal" step="0.01" min="0" value="' + (ed && existing.meta ? existing.meta : "") + '"></label>' +
-        '<label class="field">Cor<input id="pCor" type="color" value="' + (ed && existing.cor ? existing.cor : "#3E8A72") + '" style="height:42px;padding:4px"></label></div>' +
+        '<label class="field">Cor<input id="pCor" type="color" value="' + (ed && existing.cor ? existing.cor : "#0C9A76") + '" style="height:42px;padding:4px"></label></div>' +
         '<div class="btn-row"><button class="btn btn-primary" id="pSave">Salvar</button></div></div></div>';
     bindBackdropClose(root);
     document.getElementById("pSave").addEventListener("click", function () {
